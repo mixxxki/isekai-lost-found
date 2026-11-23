@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#1F4D3F"/>
+  <g transform="rotate(-8 256 256)">
+    <path d="M150 140 h200 a70 70 0 0 1 70 70 v170 a20 20 0 0 1 -20 20 h-250 a20 20 0 0 1 -20 -20 v-220 a20 20 0 0 1 20 -20z" fill="#E6CF9C"/>
+    <rect x="130" y="140" width="34" height="260" fill="#4A7186"/>
+    <circle cx="205" cy="190" r="20" fill="#1F4D3F"/>
+    <circle cx="205" cy="190" r="30" fill="none" stroke="#1E2A28" stroke-opacity=".25" stroke-width="6"/>
+    <rect x="200" y="250" width="160" height="16" rx="8" fill="#1E2A28" fill-opacity=".55"/>
+    <rect x="200" y="290" width="120" height="16" rx="8" fill="#1E2A28" fill-opacity=".35"/>
+  </g>
+  <g transform="rotate(-14 330 340)">
+    <rect x="250" y="300" width="170" height="86" rx="10" fill="none" stroke="#C8432F" stroke-width="12"/>
+    <text x="335" y="360" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="50" fill="#C8432F">返却</text>
+  </g>
+</svg>

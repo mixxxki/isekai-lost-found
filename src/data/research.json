@@ -1,0 +1,18 @@
+[
+  {"id":"open_w03","name":"時砂の原への開通調査","desc":"ゲートの線を時砂の原ドゥーンまで延ばす。","kind":"world","world":"w03","max":1,"cost":800,"growth":1,"hours":0.5,"keep":true,"req":{"returns":20}},
+  {"id":"open_w04","name":"浮島郵便区への開通調査","desc":"ゲートの線を浮島郵便区アエロまで延ばす。","kind":"world","world":"w04","max":1,"cost":12000,"growth":1,"hours":3,"keep":true,"req":{"research":"open_w03"}},
+  {"id":"open_w05","name":"夜だけの街への開通調査","desc":"ゲートの線を夜だけの街ノクタまで延ばす。","kind":"world","world":"w05","max":1,"cost":90000,"growth":1,"hours":8,"keep":true,"req":{"research":"open_w04"}},
+  {"id":"open_w06","name":"歯車峰への開通調査","desc":"ゲートの線を歯車峰グレンまで延ばす。","kind":"world","world":"w06","max":1,"cost":400000,"growth":1,"hours":16,"keep":true,"req":{"research":"open_w05"}},
+  {"id":"auto_assign","name":"常時委任の規程","desc":"回収した品物を、鑑定士へ自動で回す。","kind":"flag","max":1,"cost":300,"growth":1,"hours":0.25,"req":{"returns":3}},
+  {"id":"auto_repair","name":"工房の段取り表","desc":"素材がそろっている破損品を、修理工へ自動で回す。","kind":"flag","max":1,"cost":1500,"growth":1,"hours":1,"req":{"research":"auto_assign"}},
+  {"id":"auto_collect","name":"夜間受取の許可","desc":"ゲートに届いた品物を、倉庫に空きがある限り自動で回収する。","kind":"flag","max":1,"cost":4000,"growth":1,"hours":2,"req":{"research":"auto_repair"}},
+  {"id":"auto_dispatch","name":"定期便の運行","desc":"手の空いた配達員が、返却待ちのいちばん多い世界へ自動で出発する。","kind":"flag","max":1,"cost":150000,"growth":1,"hours":12,"req":{"research":"open_w04"}},
+  {"id":"fee_rate","name":"礼金規定の改定","desc":"返却時の礼金 ×1.25（段階ごとに掛け算）。","kind":"level","stat":"fee","per":0.2,"max":25,"cost":200,"growth":1.55,"hours":0.2,"hoursGrowth":1.25,"req":{"returns":1}},
+  {"id":"credit_rate","name":"返却証明の様式","desc":"返却時の信用 ×1.25（段階ごとに掛け算）。","kind":"level","stat":"credit","per":0.2,"max":25,"cost":300,"growth":1.55,"hours":0.25,"hoursGrowth":1.25,"req":{"returns":5}},
+  {"id":"appraise_speed","name":"鑑定手順の見直し","desc":"鑑定の速さ +15%（段階ごと）。","kind":"level","stat":"appraise","per":0.15,"max":15,"cost":250,"growth":1.6,"hours":0.2,"hoursGrowth":1.3,"req":{"returns":3}},
+  {"id":"repair_speed","name":"工具の新調","desc":"修理の速さ +15%（段階ごと）。","kind":"level","stat":"repair","per":0.15,"max":15,"cost":300,"growth":1.6,"hours":0.25,"hoursGrowth":1.3,"req":{"returns":5}},
+  {"id":"route","name":"近道の測量","desc":"配達の所要時間 -5%（段階ごと）。","kind":"level","stat":"travel","per":0.05,"max":10,"cost":600,"growth":1.8,"hours":0.5,"hoursGrowth":1.3,"req":{"returns":10}},
+  {"id":"material","name":"素材の分け前交渉","desc":"返却時にもらえる素材 +25%（段階ごと）。","kind":"level","stat":"material","per":0.25,"max":12,"cost":400,"growth":1.7,"hours":0.3,"hoursGrowth":1.3,"req":{"returns":8}},
+  {"id":"rare","name":"目録の精査","desc":"珍品・逸品が届く確率 +15%（段階ごと）。","kind":"level","stat":"rare","per":0.15,"max":10,"cost":1000,"growth":1.9,"hours":0.5,"hoursGrowth":1.35,"req":{"returns":15}},
+  {"id":"gate_tune","name":"ゲートの同調","desc":"一度に届く落とし物 +10%（段階ごと）。","kind":"level","stat":"arrival","per":0.1,"max":15,"cost":2000,"growth":1.8,"hours":1,"hoursGrowth":1.3,"req":{"research":"open_w03"}}
+]
