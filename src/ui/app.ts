@@ -12,8 +12,8 @@ import { renderStorage } from './screens/storage';
 import { renderStaff } from './screens/staff';
 import { renderMap } from './screens/map';
 import { renderCatalog } from './screens/catalog';
-import { showReport, showClosed, showIntro, showSettings } from './modals';
-import { RELOCATIONS } from '../core/data';
+import { showReport, showClosed, showIntro, showSettings, showLetter } from './modals';
+import { OWNER, MYSTERY } from '../core/data';
 import { slide } from './components';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -40,6 +40,7 @@ export class App {
   hiddenAt = 0;
   modalOpen = 0;
   shown = { fee: 0, credit: 0 };
+  mysteryKnown = 0;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -47,16 +48,13 @@ export class App {
     const { state, fresh } = load(now);
     this.s = state;
     this.shown = { fee: state.fee, credit: state.credit };
+    this.mysteryKnown = mysteryUnlocked(state);
     this.build();
     if (fresh) {
       this.render();
       showIntro(this);
     } else {
-      const r = catchUp(this.s, now);
-      const away = now - r.from;
-      startSession(this.s, now);
-      this.render();
-      if (away > SESSION_GAP) showReport(this, r);
+      this.reopen(now, true);
     }
     this.applySettings();
     save(this.s);
@@ -94,7 +92,7 @@ export class App {
     if (!u.ok) { this.toast(u.why, 'ng'); return; }
     const changed = tab !== this.tab;
     this.tab = tab;
-    if (anchor && tab === 'staff' && anchor === 'facilities') this.sub.staff = 'facilities';
+    if (tab === 'staff' && anchor) this.sub.staff = anchor === 'facilities' ? 'facilities' : 'staff';
     if (anchor && tab === 'catalog' && (anchor === 'letters' || anchor === 'mystery')) this.sub.catalog = anchor;
     this.render(changed);
     if (changed) this.main.scrollTo({ top: 0, behavior: 'auto' });
@@ -110,7 +108,7 @@ export class App {
     this.renderTabs();
     const top = this.main.scrollTop;
     const screen = this.renderScreen();
-    if (!animate) screen.style.animation = 'none';
+    if (!animate) { screen.style.animation = 'none'; screen.classList.add('static'); }
     this.main.replaceChildren(screen);
     if (!animate) this.main.scrollTop = top;
     this.updateTimers();
@@ -129,7 +127,7 @@ export class App {
 
   renderHeader() {
     const s = this.s;
-    const place = s.relocations ? RELOCATIONS[s.relocations - 1].place : '本所';
+    const place = s.relocations ? A.nextPlace(s.relocations - 1) : '本所';
     const coin = (label: string, key: 'fee' | 'credit') =>
       h('div', { class: 'coin' }, h('span', { class: 'coin-label' }, label), h('span', { class: 'coin-val', 'data-coin': key }, num(this.shown[key])));
     this.header.replaceChildren(
@@ -205,6 +203,7 @@ export class App {
     const r = newReport(now);
     advance(this.s, now, r);
     this.announce(r);
+    for (const p of this.newPages()) this.toast(`落とし主の記録に、第${p.id}頁「${p.title}」が綴じ込まれました`, 'good', () => this.go('catalog', 'mystery'));
     if (this.signature() !== this.sig) {
       if (this.modalOpen === 0) this.render();
       else { this.renderHeader(); this.renderTabs(); }
@@ -216,7 +215,11 @@ export class App {
   /** 開いている間に起きた出来事をトーストで知らせる */
   announce(r: Report) {
     if (r.trips) this.toast(`配達員が帰還　礼金 +${num(r.fee)}　信用 +${num(r.credit)}`, 'good');
-    if (r.letters) this.toast(`持ち主から手紙が${r.letters}通届きました`, 'good');
+    const first = r.letterList[0];
+    if (first) {
+      const name = OWNER[first.owner]?.name ?? '持ち主';
+      this.toast(r.letterList.length > 1 ? `${name}ほかから手紙が${r.letterList.length}通届きました` : `${name}から手紙が届きました`, 'good', () => showLetter(this, first.owner, first.idx));
+    }
     if (r.arrivals) this.toast(`ゲートに落とし物が${r.arrivals}件届きました`);
     for (const n of r.research) this.toast(`研究「${n}」が完了しました`, 'good');
   }
@@ -252,21 +255,35 @@ export class App {
     const s = this.s;
     // すぐ戻ってくる配達員がいるなら、閉館を勧めずに待つ
     const soon = s.staff.some(x => x.task?.kind === 'trip' && x.task.end - Date.now() < 15 * 60_000);
-    if (this.modalOpen === 0 && s.session.acted && !s.session.closedShown && !soon && A.canClose(s)) {
+    const todo = A.advice(s, Date.now(), 20).some(a => a.sub !== '物語');
+    if (this.modalOpen === 0 && s.session.acted && !s.session.closedShown && !soon && !todo && A.canClose(s)) {
       s.session.closedShown = true;
       showClosed(this);
     }
   }
 
+  /** 留守中の分を計算して開館する */
+  reopen(now: number, onLoad: boolean) {
+    const r = catchUp(this.s, now);
+    const pages = this.newPages();
+    startSession(this.s, now);
+    this.render();
+    if (!onLoad || now - r.from > SESSION_GAP) showReport(this, r, pages);
+  }
+
+  /** 新しく開いた「落とし主の記録」の頁 */
+  newPages(): { id: number; title: string }[] {
+    const n = mysteryUnlocked(this.s);
+    const list = MYSTERY.filter(m => m.id > this.mysteryKnown && m.id <= n).map(m => ({ id: m.id, title: m.title }));
+    this.mysteryKnown = Math.max(this.mysteryKnown, n);
+    return list;
+  }
+
   onVisibility() {
     const now = Date.now();
     if (document.hidden) { this.hiddenAt = now; save(this.s, now); return; }
-    if (this.hiddenAt && now - this.hiddenAt > SESSION_GAP) {
-      const r = catchUp(this.s, now);
-      startSession(this.s, now);
-      this.render();
-      showReport(this, r);
-    } else this.tick();
+    if (this.hiddenAt && now - this.hiddenAt > SESSION_GAP) this.reopen(now, false);
+    else this.tick();
   }
 
   // ---------- 操作 ----------
@@ -281,11 +298,14 @@ export class App {
     return r;
   }
 
-  toast(msg: string, kind?: 'ng' | 'good') {
-    const el = h('div', { class: ['toast', kind] }, msg);
+  toast(msg: string, kind?: 'ng' | 'good', onClick?: () => void) {
+    const el = h('div', { class: ['toast', kind, onClick && 'tap'], role: onClick ? 'button' : null }, msg);
+    if (onClick) el.addEventListener('click', () => { el.remove(); onClick(); });
+    // モーダルを開いているときは上に出す（ボタンを隠さないように）
+    this.toasts.classList.toggle('top', this.modalOpen > 0 || !!document.querySelector('.closed'));
     this.toasts.append(el);
-    while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
-    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, 2600);
+    while (this.toasts.children.length > 2) this.toasts.firstElementChild?.remove();
+    setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, onClick ? 4200 : 2600);
   }
 
   /** 画面上の位置から数字を浮かび上がらせる */

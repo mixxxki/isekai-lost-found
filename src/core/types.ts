@@ -4,7 +4,7 @@ export interface WorldDef {
   travelHours: number; value: number; desc: string; x: number; y: number;
 }
 export interface ItemDef { id: string; world: string; name: string; desc: string; clues: string[]; generic?: boolean }
-export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; generic?: boolean }
+export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; items?: string[]; generic?: boolean }
 export interface MysteryReq { letters?: number; relocations?: number; worlds?: number; catalog?: number }
 export interface MysteryDef { id: number; title: string; req: MysteryReq; text: string | null }
 export interface ResearchReq { returns?: number; research?: string }
@@ -53,18 +53,22 @@ export type Task =
 export interface Staff { id: number; role: Role; name: string; lv: number; trait: string; task: Task | null; hiredAt: number }
 export interface Candidate { name: string; trait: string }
 
-export interface Letter { owner: string; world: string; idx: number; at: number; read: boolean }
+export interface Letter { owner: string; world: string; idx: number; at: number; read: boolean; type?: string; item?: number }
 export interface RequestPost { id: number; type: string; world: string; owner: string; postedAt: number; expiresAt: number; done: boolean }
 
 export interface Report {
   from: number; to: number;
   arrivals: number; appraised: number; repaired: number; trips: number; returned: number;
   fee: number; credit: number; letters: number; research: string[]; requests: number;
+  letterList: { owner: string; idx: number }[];
+  capped: boolean;      // 24時間を超えた分を切り捨てたか
+  deferred: number;     // ゲート前が満杯で見送られた便
 }
 
 export interface SessionStats {
   startedAt: number; fee: number; credit: number; appraised: number; correct: number;
   repaired: number; returned: number; letters: number; dispatched: number; acted: boolean; closedShown: boolean;
+  collected?: number; shipped?: number; shippedFee?: number;
 }
 
 export interface GameState {
@@ -78,17 +82,18 @@ export interface GameState {
   candidates: Record<Role, Candidate[]>;
   items: ItemInst[];
   gate: { next: number; deliveries: number };
-  research: { active: { id: string; start: number; end: number } | null; levels: Record<string, number> };
-  catalog: Record<string, { n: number; best: Rarity; r?: number }>;
+  research: { active: { id: string; start: number; end: number } | null; next: string | null; levels: Record<string, number> };
+  catalog: Record<string, { n: number; best: Rarity; r?: number; o?: string[] }>;
   ownerReturns: Record<string, number>;
   letters: Letter[];
   requests: RequestPost[];
   mysterySeen: number;
   relocations: number;
+  perm: number;          // 移転で積み上がった永続倍率の加算分
   firstTrip: boolean;
   totals: { returned: number; appraised: number; correct: number; fee: number; credit: number; trips: number };
   session: SessionStats;
   report: Report | null;   // 留守中のまとめ（開館時に表示）
-  settings: { reduceMotion: boolean };
+  settings: { reduceMotion: boolean; autoAssign: boolean };
   log: { at: number; text: string }[];
 }

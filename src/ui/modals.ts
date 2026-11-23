@@ -4,6 +4,7 @@ import type { Report } from '../core/types';
 import * as A from '../core/actions';
 import * as B from '../core/balance';
 import { ITEM, WORLD, OWNER, RELOCATIONS, ITEMS_BY_WORLD, OWNERS_BY_WORLD } from '../core/data';
+import { ownerName } from './components';
 import { h, icon } from './dom';
 import { I } from './icons';
 import { num, clock, span, pad } from './fmt';
@@ -14,12 +15,13 @@ import { createState } from '../core/engine';
 type Closer = () => void;
 function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { title?: string; onClose?: () => void } = {}) {
   app.modalOpen++;
+  app.toasts.classList.add('top');
   const layer = h('div', { class: 'layer', role: 'dialog', 'aria-modal': 'true' });
   let closed = false;
   const close = () => {
     if (closed) return; closed = true;
     layer.classList.add('closing'); body.classList.add('closing');
-    setTimeout(() => { layer.remove(); app.modalOpen--; opts.onClose?.(); if (app.modalOpen === 0) app.render(); }, 240);
+    setTimeout(() => { layer.remove(); app.modalOpen--; opts.onClose?.(); if (app.modalOpen === 0) { app.toasts.classList.remove('top'); app.render(); } }, 240);
   };
   const scrim = h('div', { class: 'scrim', onclick: close });
   const body = h('div', { class: 'sheet' }, h('div', { class: 'grab' }),
@@ -27,6 +29,12 @@ function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { titl
     ...build(close));
   layer.append(scrim, body);
   document.body.append(layer);
+  // つまみを下へ引くと閉じる
+  const grab = body.querySelector<HTMLElement>('.grab')!;
+  let y0 = -1;
+  grab.addEventListener('pointerdown', e => { y0 = e.clientY; grab.setPointerCapture(e.pointerId); });
+  grab.addEventListener('pointermove', e => { if (y0 >= 0) body.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; });
+  grab.addEventListener('pointerup', e => { const d = e.clientY - y0; y0 = -1; if (d > 80) close(); else body.style.transform = ''; });
   return { close, body };
 }
 
@@ -43,14 +51,14 @@ export function showGuess(app: App, id: number) {
     h('div', { class: 'tag-no' }, `No.${pad(it.id)}`),
     h('div', { class: 'tag-name' }, def.name),
     h('div', { class: 'desc' }, def.desc),
-    h('div', { class: 'tag-foot' }, it.rarity ? h('span', { class: 'chip red' }, B.RARITY_NAME[it.rarity]) : null, isRequested(s, it) ? h('span', { class: 'chip green' }, '依頼品') : null));
+    h('div', { class: 'tag-foot' }, it.rarity ? h('span', { class: 'chip red' }, `${B.RARITY_NAME[it.rarity]}（礼金・信用×${B.RARITY_MULT[it.rarity]}）`) : null, isRequested(s, it) ? h('span', { class: 'chip green' }, '依頼品（報酬×3）') : null));
   const clues = h('div', { class: 'clues' }, ...def.clues.map((c, i) => h('div', { class: 'clue' }, h('b', null, `手がかり${i + 1}`), c)));
   const after = h('div');
   const choiceBtns = it.choices.map(wid => {
     const w = WORLD[wid];
     const opened = B.openWorlds(s).includes(wid);
     const b = h('button', { class: ['choice', it.strike === wid && 'struck'], style: { '--wc': w.color } },
-      h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : '未開通の世界')));
+      h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : 'まだゲートの線が届いていない世界')));
     b.addEventListener('click', () => answer(wid));
     return b;
   });
@@ -69,6 +77,7 @@ export function showGuess(app: App, id: number) {
     delegate.remove();
     tag.classList.remove('unknown');
     tag.style.setProperty('--wc', WORLD[it!.world].color);
+    tag.classList.add('stamped');
     tag.append(h('div', { class: ['stamp', 'big', 'press', !right && 'gray'] }, right ? '的中' : '外れ'));
     const nextOne = app.s.items.find(i => i.stage === 'unknown');
     after.append(
@@ -77,6 +86,8 @@ export function showGuess(app: App, id: number) {
       h('div', { class: 'btn-row mt12' },
         nextOne ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showGuess(app, nextOne.id), 260); } }, '次の品へ', icon(I.arrow, 18)) : null,
         h('button', { class: 'btn btn-ghost', onclick: close }, '閉じる')));
+    // 小さい画面でも結果と「次の品へ」が見えるように
+    requestAnimationFrame(() => after.scrollIntoView({ block: 'end', behavior: s.settings.reduceMotion ? 'auto' : 'smooth' }));
     if (navigator.vibrate && !s.settings.reduceMotion) navigator.vibrate(right ? 18 : [10, 40, 10]);
   }
   function next() {
@@ -105,7 +116,7 @@ export function showItem(app: App, id: number) {
       it.verdict === 'correct' ? h('div', { class: 'stamp' }, '的中') : null),
     h('div', { class: 'clues' }, ...def.clues.map((c, i) => h('div', { class: 'clue' }, h('b', null, `手がかり${i + 1}`), c))),
     known ? h('div', { class: 'card mt12' }, h('dl', { class: 'kv' },
-      h('dt', null, '持ち主'), h('dd', null, OWNER[it.owner]?.name ?? '不明'),
+      h('dt', null, '持ち主'), h('dd', null, ownerName(it.owner, it.world)),
       h('dt', null, '見込み礼金'), h('dd', null, num(B.itemFee(s, it))),
       h('dt', null, '見込み信用'), h('dd', null, num(B.itemCredit(s, it))))) : null,
     it.stage === 'damaged' ? h('button', { class: 'btn btn-primary btn-block mt12', onclick: () => { app.act((st, now) => A.repair(st, [id], now)); close(); } }, `工房へ回す（${w.material} ${B.repairMaterials(s, it.world)}）`) : null,
@@ -127,6 +138,7 @@ export function showCatalogItem(app: App, typeId: string) {
       h('div', { class: 'tag-foot' }, h('span', { class: 'chip' }, `受付 ${e?.n ?? 0}件`), h('span', { class: 'chip' }, `返却 ${e?.r ?? 0}件`), e?.best ? h('span', { class: 'chip red' }, B.RARITY_NAME[e.best]) : null),
       (e?.r ?? 0) > 0 ? h('div', { class: 'stamp press' }, '返却済') : null),
     h('div', { class: 'clues' }, ...def.clues.map((c, i) => h('div', { class: 'clue' }, h('b', null, `手がかり${i + 1}`), c))),
+    e?.o?.length ? h('div', { class: 'card mt12' }, h('div', { class: 'card-s' }, 'この品を返した相手'), h('div', { style: { fontWeight: 700, marginTop: '2px' } }, e.o.map(o => OWNER[o]?.name ?? '').filter(Boolean).join('、'))) : null,
     h('button', { class: 'btn btn-ghost btn-block mt12', onclick: close }, '閉じる')
   ], { title: '図鑑' });
 }
@@ -134,13 +146,20 @@ export function showCatalogItem(app: App, typeId: string) {
 // ---------- 手紙 ----------
 export function showLetter(app: App, ownerId: string, idx: number) {
   const o = OWNER[ownerId];
+  const l = app.s.letters.find(x => x.owner === ownerId && x.idx === idx);
   A.readLetter(app.s, ownerId, idx);
   save(app.s);
-  const text = o.letters[idx].replaceAll('{item}', 'お届けの品');
-  sheet(app, close => [
+  const itemName = l?.type ? ITEM[l.type]?.name ?? 'お届けの品' : 'お届けの品';
+  const text = o.letters[idx].replaceAll('{item}', itemName);
+  const nextUnread = app.s.letters.find(x => !x.read);
+  const { close } = sheet(app, close => [
     h('div', { class: 'letter' }, h('div', { class: 'seal' }, String(idx + 1)), ...text.split('\n').map(p => h('p', { style: { margin: 0 } }, p)), h('div', { class: 'from' }, `―― ${o.name}`)),
-    h('button', { class: 'btn btn-ghost btn-block', onclick: close }, '手紙を閉じる')
-  ], { title: `${WORLD[app.s.letters.find(l => l.owner === ownerId)?.world ?? '']?.short ?? ''}からの手紙` });
+    l?.type ? h('div', { class: 'enclosure' }, h('span', { class: 'chip' }, '同封の記録'), `返却品　${itemName}${l.item ? `　No.${pad(l.item)}` : ''}`) : null,
+    h('div', { class: 'btn-row' },
+      nextUnread ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showLetter(app, nextUnread.owner, nextUnread.idx), 260); } }, '次の手紙へ', icon(I.arrow, 18)) : null,
+      h('button', { class: 'btn btn-ghost', onclick: () => close() }, '手紙を閉じる'))
+  ], { title: `${WORLD[l?.world ?? '']?.short ?? ''}からの手紙` });
+  void close;
 }
 
 // ---------- 着任（はじめて） ----------
@@ -158,7 +177,7 @@ export function showIntro(app: App) {
 }
 
 // ---------- 開館（留守中のまとめ） ----------
-export function showReport(app: App, r: Report) {
+export function showReport(app: App, r: Report, pages: { id: number; title: string }[] = []) {
   const any = r.arrivals || r.appraised || r.repaired || r.trips || r.research.length;
   const lines: [string, string][] = [
     ['留守にしていた時間', span(r.to - r.from)],
@@ -171,12 +190,19 @@ export function showReport(app: App, r: Report) {
     ['届いた手紙', `${r.letters}通`]
   ];
   if (r.requests) lines.push(['かなった依頼', `${r.requests}件`]);
+  if (r.deferred) lines.push(['見送られた便', `${r.deferred}便（ゲート前が満杯）`]);
+  const senders = [...new Set(r.letterList.map(l => OWNER[l.owner]?.name).filter(Boolean))];
+  if (senders.length) lines.push(['手紙の差出人', senders.slice(0, 3).join('、') + (senders.length > 3 ? ` ほか${senders.length - 3}人` : '')]);
+  for (const p of pages) lines.push([`綴じ込まれた頁`, `第${p.id}頁「${p.title}」`]);
   for (const n of r.research) lines.push(['完了した研究', n]);
   sheet(app, close => [
     h('div', { class: 'receipt' }, h('h3', null, '留守中の記録'),
       ...lines.map(([k, v], i) => h('div', { class: 'ln', style: { animationDelay: `${0.25 + i * 0.06}s` } }, h('span', null, k), h('b', null, v))),
-      !any ? h('p', { class: 'note', style: { textAlign: 'center' } }, '静かな留守番でした。') : null),
-    h('button', { class: 'btn btn-primary btn-block', onclick: close }, '窓口を開ける')
+      !any ? h('p', { class: 'note', style: { textAlign: 'center' } }, '静かな留守番でした。') : null,
+      r.capped ? h('p', { class: 'note', style: { textAlign: 'center', margin: '8px 0 4px' } }, '留守中の業務は、最後に閉じてから24時間分までしか進みません。') : null),
+    h('div', { class: 'btn-row' },
+      r.letterList.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'letters'), 260); } }, '手紙を読む') : null,
+      h('button', { class: 'btn btn-primary', onclick: close }, '窓口を開ける'))
   ], { title: '開館' });
 }
 
@@ -191,15 +217,16 @@ export function showClosed(app: App) {
     h('div', { class: 'sign-wrap' }, h('div', { class: 'sign' }, h('div', { class: 'sign-board' }, '本日閉館'))),
     h('h2', null, '今回の成果'),
     h('div', { class: 'panel' },
-      ...[['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['派遣', `${ss.dispatched}人`], ['返却', `${ss.returned}件`], ['礼金', `+${num(ss.fee)}`], ['信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
+      ...[['回収', `${ss.collected ?? 0}件`], ['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['配達に出した品', `${ss.shipped ?? 0}件（${ss.dispatched}人）`], ['見込み礼金', `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', `+${num(ss.fee)}`], ['受け取った信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
         .map(([k, v]) => h('div', { class: 'ln' }, h('span', null, k), h('b', null, v)))),
     h('h2', null, '留守中の予定'),
     h('div', { class: 'panel' }, ...A.timers(s).map(t => h('div', { class: 'ln' },
       h('span', { class: 'row', style: { gap: '8px' } }, t.color ? h('span', { class: 'wdot', style: { background: t.color } }) : null, t.label),
       h('b', null, clock(t.at, now))))),
     h('div', { class: 'rec' }, h('small', null, '次に開くおすすめ時刻'), h('div', { class: 't' }, clock(rec, now)), h('small', null, `いまから約${span(rec - now)}後`)),
-    h('div', { class: 'btn-row mt16' },
-      h('button', { class: 'btn btn-tag', onclick: () => done() }, '窓口に戻る'))));
+    s.items.some(i => i.stage === 'ready') ? h('p', { style: { fontSize: '12.5px', opacity: .8, textAlign: 'center', margin: '12px 0 0' } }, `返却待ち${s.items.filter(i => i.stage === 'ready').length}件は、配達員が戻りしだい出せます。`) : null,
+    h('div', { class: 'actions' }, h('div', { class: 'btn-row' },
+      h('button', { class: 'btn btn-tag', onclick: () => done() }, '窓口に戻る')))));
   document.body.append(el);
   save(s);
   function done() {
@@ -233,17 +260,18 @@ export function showWorld(app: App, wid: string) {
 export function showRelocate(app: App) {
   const s = app.s;
   const next = RELOCATIONS[s.relocations];
-  if (!next) return;
+  const gain = B.relocateGain(s);
   sheet(app, close => [
     h('div', { class: 'receipt' }, h('h3', null, '移転届'),
-      h('div', { class: 'ln' }, h('span', null, '移転先'), h('b', null, next.place)),
-      h('div', { class: 'ln' }, h('span', null, '新しい世界'), h('b', null, WORLD[next.world].name)),
-      h('div', { class: 'ln' }, h('span', null, '新しい仕組み'), h('b', null, next.mechanicName)),
-      h('p', { class: 'note' }, next.mechanicDesc),
-      h('div', { class: 'ln' }, h('span', null, '永続倍率'), h('b', null, `×${B.branchMult(s).toFixed(1)} → ×${(B.branchMult(s) + 0.5).toFixed(1)}`))),
+      h('div', { class: 'ln' }, h('span', null, '移転先'), h('b', null, A.nextPlace(s.relocations))),
+      next ? h('div', { class: 'ln' }, h('span', null, '新しい世界'), h('b', null, WORLD[next.world].name)) : null,
+      next ? h('div', { class: 'ln' }, h('span', null, '新しい仕組み'), h('b', null, next.mechanicName)) : null,
+      next ? h('p', { class: 'note' }, next.mechanicDesc) : h('p', { class: 'note' }, '終点の先の窓口。新しい世界はないが、永続倍率がさらに積み上がる。'),
+      h('div', { class: 'ln' }, h('span', null, '移転の加算'), h('b', null, `+${s.perm.toFixed(2)} → +${(s.perm + gain).toFixed(2)}`)),
+      h('p', { class: 'note' }, '目標を超えて信用を貯めてから移転すると、加算が少し増えます（最大+1.0まで上乗せ）。')),
     h('div', { class: 'card' },
-      h('div', { class: 'card-t' }, '引き継ぐもの'), h('p', { class: 'note', style: { margin: '4px 0 10px' } }, '職員（Lv・特性）、図鑑、持ち主の手紙、落とし主の記録、開通した世界'),
-      h('div', { class: 'card-t' }, '置いていくもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残す）、研究（開通以外）')),
+      h('div', { class: 'card-t' }, '引き継ぐもの'), h('p', { class: 'note', style: { margin: '4px 0 10px' } }, '職員（Lv・特性。Lvの合計が倍率になる）、図鑑（収集率が倍率になる）、持ち主の手紙、落とし主の記録、開通した世界'),
+      h('div', { class: 'card-t' }, '置いていくもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残す）、段階式の研究（開通と自動化の規程は残る）')),
     h('div', { class: 'btn-row mt16' },
       h('button', { class: 'btn btn-ghost', onclick: close }, 'やめておく'),
       h('button', { class: 'btn btn-red', onclick: () => { close(); app.act(A.relocate); app.go('counter'); } }, '移転する'))
@@ -257,15 +285,21 @@ export function showSettings(app: App) {
   const input = h('textarea', { class: 'field', placeholder: 'ここに書き出した文字列を貼り付け', 'aria-label': 'インポートする文字列' }) as HTMLTextAreaElement;
   const file = h('input', { type: 'file', accept: '.txt,.json,text/plain,application/json', style: { display: 'none' } }) as HTMLInputElement;
   file.addEventListener('change', async () => { const f = file.files?.[0]; if (f) input.value = await f.text(); });
-  const sw = h('button', { class: ['switch', s.settings.reduceMotion && 'on'], 'aria-label': '動きを減らす', role: 'switch', 'aria-checked': String(s.settings.reduceMotion) });
-  sw.addEventListener('click', () => {
-    s.settings.reduceMotion = !s.settings.reduceMotion;
-    sw.classList.toggle('on', s.settings.reduceMotion);
-    sw.setAttribute('aria-checked', String(s.settings.reduceMotion));
-    app.applySettings(); save(s);
-  });
+  const toggle = (key: 'reduceMotion' | 'autoAssign', title: string, desc: string) => {
+    const sw = h('span', { class: ['switch', s.settings[key] && 'on'], 'aria-hidden': 'true' });
+    const row = h('button', { class: 'toggle toggle-row', role: 'switch', 'aria-checked': String(s.settings[key]) },
+      h('div', null, h('div', { class: 'card-t' }, title), h('div', { class: 'card-s' }, desc)), sw);
+    row.addEventListener('click', () => {
+      s.settings[key] = !s.settings[key];
+      sw.classList.toggle('on', s.settings[key]);
+      row.setAttribute('aria-checked', String(s.settings[key]));
+      app.applySettings(); save(s);
+    });
+    return row;
+  };
   sheet(app, close => [
-    h('div', { class: 'card' }, h('div', { class: 'toggle' }, h('div', null, h('div', { class: 'card-t' }, '動きを減らす'), h('div', { class: 'card-s' }, 'アニメーションを最小限にします')), sw)),
+    h('div', { class: 'card' }, toggle('reduceMotion', '動きを減らす', 'アニメーションを最小限にします')),
+    B.rlv(s, 'auto_assign') > 0 ? h('div', { class: 'card' }, toggle('autoAssign', '回収した品を鑑定士に回す', '「常時委任の規程」による自動の鑑定。止めると、すべて自分で鑑定できます')) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-t' }, 'エクスポート'),
       h('p', { class: 'note', style: { margin: '4px 0 8px' } }, '進行状況を文字列にして書き出します。別の端末へ移すときに使います。'),
@@ -289,7 +323,7 @@ export function showSettings(app: App) {
             const ns = importSave(input.value, Date.now());
             Object.assign(app.s, ns);
             save(app.s); close(); app.toast('読み込みました', 'good');
-          } catch (e) { app.toast(`読み込めませんでした：${(e as Error).message}`, 'ng'); }
+          } catch { app.toast('読み込めませんでした。書き出した文字列を、最初から最後まで丸ごと貼り付けてください', 'ng'); }
         } }, '読み込む'))),
     h('div', { class: 'card' },
       h('div', { class: 'card-t' }, 'はじめから'),

@@ -63,3 +63,7 @@ for (const w of WORLDS) {
 export const OWNER: Record<string, OwnerDef> = {};
 for (const list of Object.values(OWNERS_BY_WORLD)) for (const o of list) OWNER[o.id] = o;
 export const LETTER_THRESHOLDS = [1, 3, 6];
+/** 品物の種類 → 持ち主（owners.json の items で指定されたもの） */
+export const ITEM_OWNER: Record<string, string> = {};
+for (const o of Object.values(OWNER)) for (const t of o.items ?? []) ITEM_OWNER[t] = o.id;
+export const WORLD_INDEX: Record<string, number> = Object.fromEntries(WORLDS.map((w, i) => [w.id, i]));

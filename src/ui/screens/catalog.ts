@@ -1,7 +1,8 @@
 // 図鑑：品物・手紙・「落とし主」の記録
 import type { App } from '../app';
 import * as B from '../../core/balance';
-import { WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, LETTER_THRESHOLDS, MYSTERY } from '../../core/data';
+import { WORLDS, WORLD, ITEM, OWNER, ITEMS_BY_WORLD, OWNERS_BY_WORLD, LETTER_THRESHOLDS, MYSTERY } from '../../core/data';
+import type { GameState, MysteryReq } from '../../core/types';
 import { mysteryUnlocked } from '../../core/engine';
 import { h, svg } from '../dom';
 import { section, seg, worldDot } from '../components';
@@ -17,9 +18,12 @@ export function renderCatalog(app: App): HTMLElement {
   const root = h('div', { class: 'screen' });
   const unread = s.letters.filter(l => !l.read).length;
   const unlocked = mysteryUnlocked(s);
+  const sub = app.sub.catalog ?? 'items';
+  // 記録を開いたら、その場で「新」を消す（強調表示には開く前の値を使う）
+  const prevSeen = s.mysterySeen;
+  if (sub === 'mystery') s.mysterySeen = Math.max(s.mysterySeen, unlocked);
   root.append(seg(app, 'catalog', [['items', '品物'], ['letters', unread ? `手紙・${unread}` : '手紙'], ['mystery', unlocked > s.mysterySeen ? '記録・新' : '記録']]));
   const open = new Set(B.openWorlds(s));
-  const sub = app.sub.catalog ?? 'items';
 
   if (sub === 'items') {
     const total = Object.values(ITEMS_BY_WORLD).reduce((a, l) => a + l.length, 0);
@@ -39,7 +43,12 @@ export function renderCatalog(app: App): HTMLElement {
         }))));
     }
   } else if (sub === 'letters') {
-    root.append(h('p', { class: 'note', style: { marginTop: 0, scrollMarginTop: '20px' }, id: 'a-letters' }, `持ち主の品を返すたびに、手紙が届くことがあります（${LETTER_THRESHOLDS.join('・')}件目）。受け取った手紙 ${s.letters.length}通。`));
+    root.append(h('p', { class: 'note', style: { marginTop: 0 }, id: 'a-letters' }, `持ち主の品を返すたびに、手紙が届くことがあります（${LETTER_THRESHOLDS.join('・')}件目）。受け取った手紙 ${s.letters.length}通。`));
+    const fresh = s.letters.filter(l => !l.read).sort((a, b) => a.at - b.at);
+    if (fresh.length) root.append(section('新着', `${fresh.length}通`, h('div', { class: 'new-letters' }, ...fresh.slice(0, 12).map(l =>
+      h('button', { class: 'new-letter', onclick: () => showLetter(app, l.owner, l.idx) },
+        h('span', { class: 'seal-s' }, String(l.idx + 1)),
+        h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700, fontSize: '14px' } }, OWNER[l.owner]?.name ?? ''), h('div', { class: 'card-s' }, `${WORLD[l.world].short}から${l.type ? `・${ITEM[l.type]?.name ?? ''}の礼状` : ''}`)))))));
     for (const w of WORLDS) {
       if (!open.has(w.id)) continue;
       const owners = OWNERS_BY_WORLD[w.id];
@@ -61,17 +70,22 @@ export function renderCatalog(app: App): HTMLElement {
         unmet ? h('div', { class: met.length ? 'owner' : '' }, h('div', { class: 'card-s' }, `まだ品物を返していない持ち主が${unmet}人います。`)) : null)));
     }
   } else {
-    const prev = s.mysterySeen;
-    s.mysterySeen = Math.max(s.mysterySeen, unlocked);
-    root.append(section('落とし主の正体', `${unlocked}/${MYSTERY.length}`, h('div', { id: 'a-mystery', class: 'card' }, ...MYSTERY.map(m => {
+    root.append(section('落とし主の記録', `${unlocked}/${MYSTERY.length}頁`, h('div', { id: 'a-mystery', class: 'card' }, ...MYSTERY.map(m => {
       const got = m.id <= unlocked;
-      const req = m.req;
-      const hint = [req.letters ? `手紙${req.letters}通` : '', req.relocations ? `移転${req.relocations}回` : '', req.catalog ? `図鑑${Math.round(req.catalog * 100)}%` : ''].filter(Boolean).join('・');
-      return h('div', { class: ['myst', !got && 'locked', got && m.id > prev && 'new'] },
+      return h('div', { class: ['myst', !got && 'locked', got && m.id > prevSeen && 'new'] },
         h('div', { class: 'myst-no' }, String(m.id)),
         h('div', { class: 'myst-t' }, got ? m.title : '――――'),
-        h('div', { class: 'myst-b' }, got ? (m.text ?? '（この頁は、まだ綴じられていない。）') : h('span', { class: 'muted', style: { fontSize: '12px' } }, `条件：${hint || '—'}`)));
+        h('div', { class: 'myst-b' }, got ? (m.text ?? '（この頁は、まだ綴じられていない。）') : m.id === unlocked + 1 ? h('span', { class: 'muted', style: { fontSize: '12.5px' } }, nextHint(s, m.req)) : null));
     }))));
   }
   return root;
+}
+
+/** 次の頁の手がかり（数字ではなく、窓口の言葉で） */
+function nextHint(s: GameState, q: MysteryReq): string {
+  if ((q.relocations ?? 0) > s.relocations) return '次の頁は、支所を移した先にあるらしい。';
+  const need = (q.letters ?? 0) - s.letters.length;
+  if (need > 0) return `持ち主たちの手紙が、あと${need}通ほど集まれば綴じられそうだ。`;
+  if ((q.catalog ?? 0) > B.catalogRatio(s)) return '図鑑がもう少し埋まれば、何かがわかりそうだ。';
+  return 'もうすぐ綴じられる。';
 }

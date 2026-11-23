@@ -1,5 +1,5 @@
 import type { ItemInst, GameState } from '../core/types';
-import { ITEM, WORLD } from '../core/data';
+import { ITEM, WORLD, OWNER } from '../core/data';
 import { RARITY_NAME } from '../core/balance';
 import { h, svg } from './dom';
 import { pad } from './fmt';
@@ -14,7 +14,9 @@ export const STAGE_LABEL: Record<ItemInst['stage'], string> = {
 export const tilt = (id: number, amp = 1.6) => `${(((id * 9301 + 49297) % 233280) / 233280 * 2 - 1) * amp}deg`;
 
 export function pbar(start: number, end: number, cls = ''): HTMLElement {
-  return h('div', { class: `pbar live ${cls}`, 'data-start': start, 'data-end': end }, h('i'));
+  // 描き直しても0%から伸び直さないよう、最初から今の幅で作る
+  const p = Math.max(0, Math.min(1, (Date.now() - start) / Math.max(1, end - start)));
+  return h('div', { class: `pbar live ${cls}`, 'data-start': start, 'data-end': end }, h('i', { style: { width: `${(p * 100).toFixed(2)}%` } }));
 }
 export const countdown = (end: number) => h('span', { class: 'num', 'data-end': end }, '');
 
@@ -89,3 +91,6 @@ export function slide(app: App, key: string, idx: number, el: HTMLElement): HTML
   else el.style.transform = `translateX(${idx * 100}%)`;
   return el;
 }
+
+/** 持ち主の表示名（まだ誰とも決まっていない品は「〜の誰か」） */
+export const ownerName = (owner: string, world: string) => OWNER[owner]?.name ?? `${WORLD[world].short}の誰か`;

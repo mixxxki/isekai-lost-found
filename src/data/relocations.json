@@ -1,8 +1,8 @@
 [
-  {"n":1,"place":"ネブラ港 第二倉庫街","world":"w07","mechanic":"express","mechanicName":"速達便","mechanicDesc":"配達員を速達で送り出せる。所要時間が半分になるかわりに、礼金と信用は0.75倍。"},
-  {"n":2,"place":"カルタ森 旧閲覧室","world":"w08","mechanic":"bulletin","mechanicName":"大掲示板","mechanicDesc":"「探しています」の貼り紙が2枚多く貼れる。依頼の報酬は1.5倍。"},
-  {"n":3,"place":"時砂の原 停留所跡","world":"w09","mechanic":"bigcart","mechanicName":"大型の荷車","mechanicDesc":"配達員の持てる数が1.5倍になる。"},
-  {"n":4,"place":"浮島 第七郵便塔","world":"w10","mechanic":"nightshift","mechanicName":"夜番の常駐","mechanicDesc":"ゲートから一度に届く落とし物が25%増える。"},
-  {"n":5,"place":"ノクタ 畳まれない窓","world":"w11","mechanic":"hint","mechanicName":"鑑定の手引き","mechanicDesc":"3択の外れが常に1つ消え、正解時の礼金が×2から×3になる。"},
-  {"n":6,"place":"終点の手前","world":"w12","mechanic":"archive","mechanicName":"永久保存庫","mechanicDesc":"図鑑のセットボーナスが2倍になる。"}
+  {"n": 1, "place": "ネブラ港 第二倉庫街", "world": "w07", "mechanic": "express", "mechanicName": "速達便", "mechanicDesc": "配達員を速達で送り出せる。所要時間が半分になるかわりに、見込み礼金の3割を前払いする。"},
+  {"n": 2, "place": "カルタ森 旧閲覧室", "world": "w08", "mechanic": "bulletin", "mechanicName": "大掲示板", "mechanicDesc": "「探しています」の貼り紙が2枚多く貼れる。依頼の報酬は1.5倍。"},
+  {"n": 3, "place": "時砂の原 停留所跡", "world": "w09", "mechanic": "archive", "mechanicName": "永久保存庫", "mechanicDesc": "図鑑のセットボーナスが2倍になる。"},
+  {"n": 4, "place": "浮島 第七郵便塔", "world": "w10", "mechanic": "nightshift", "mechanicName": "夜番の常駐", "mechanicDesc": "ゲートから一度に届く落とし物が25%増える。"},
+  {"n": 5, "place": "ノクタ 畳まれない窓", "world": "w11", "mechanic": "hint", "mechanicName": "鑑定の手引き", "mechanicDesc": "3択の外れが常に1つ消え、正解時の礼金が×2から×3、信用が×1.2から×1.5になる。"},
+  {"n": 6, "place": "終点の手前", "world": "w12", "mechanic": "bigcart", "mechanicName": "大型の荷車", "mechanicDesc": "配達員の持てる数が1.5倍になる。"}
 ]

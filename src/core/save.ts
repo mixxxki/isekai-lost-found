@@ -9,7 +9,8 @@ function migrate(raw: any, now: number): GameState {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.items) || !Array.isArray(raw.staff)) throw new Error('セーブデータの形式が正しくありません');
   const s = { ...base, ...raw } as GameState;
   s.facilities = { ...base.facilities, ...raw.facilities };
-  s.research = { active: raw.research?.active ?? null, levels: { ...(raw.research?.levels ?? {}) } };
+  s.research = { active: raw.research?.active ?? null, next: raw.research?.next ?? null, levels: { ...(raw.research?.levels ?? {}) } };
+  if (typeof raw.perm !== 'number') s.perm = 0.5 * (raw.relocations ?? 0);
   s.totals = { ...base.totals, ...raw.totals };
   s.settings = { ...base.settings, ...raw.settings };
   s.session = { ...base.session, ...raw.session };

@@ -1,13 +1,13 @@
 // ===== 時間経過の処理（純粋なロジック。DOMに触れない） =====
 import type { GameState, ItemInst, Staff, Report, Rarity, Role, Candidate } from './types';
-import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait } from './data';
+import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait, ITEM_OWNER, OWNER } from './data';
 import { rand, pick, shuffle } from './rng';
 import * as B from './balance';
 
 export const SAVE_VERSION = 1;
 
 export function newReport(t: number): Report {
-  return { from: t, to: t, arrivals: 0, appraised: 0, repaired: 0, trips: 0, returned: 0, fee: 0, credit: 0, letters: 0, research: [], requests: 0 };
+  return { from: t, to: t, arrivals: 0, appraised: 0, repaired: 0, trips: 0, returned: 0, fee: 0, credit: 0, letters: 0, research: [], requests: 0, letterList: [], capped: false, deferred: 0 };
 }
 export function newSession(t: number) {
   return { startedAt: t, fee: 0, credit: 0, appraised: 0, correct: 0, repaired: 0, returned: 0, letters: 0, dispatched: 0, acted: false, closedShown: false };
@@ -34,12 +34,12 @@ export function createState(now: number, seed = (Math.random() * 2 ** 31) | 0): 
     staff: [], candidates: { appraiser: [], repairer: [], courier: [] },
     items: [],
     gate: { next: now + B.GATE_INTERVAL, deliveries: 0 },
-    research: { active: null, levels: {} },
+    research: { active: null, next: null, levels: {} },
     catalog: {}, ownerReturns: {}, letters: [], requests: [],
-    mysterySeen: 0, relocations: 0, firstTrip: true,
+    mysterySeen: 0, relocations: 0, perm: 0, firstTrip: true,
     totals: { returned: 0, appraised: 0, correct: 0, fee: 0, credit: 0, trips: 0 },
     session: newSession(now), report: null,
-    settings: { reduceMotion: false },
+    settings: { reduceMotion: false, autoAssign: true },
     log: []
   };
   addStaff(s, 'appraiser', { name: '相良', trait: 'plain' }, now);
@@ -69,21 +69,41 @@ function rollRarity(s: GameState): Rarity {
   const x = rand(s);
   return x < r2 ? 2 : x < r2 + r1 ? 1 : 0;
 }
-function pickOwner(s: GameState, world: string): string {
-  // 手紙が残っている持ち主を優先（物語が進むように）
-  const list = OWNERS_BY_WORLD[world];
-  const pending = list.filter(o => (s.ownerReturns[o.id] ?? 0) < LETTER_THRESHOLDS[2]);
-  return pick(s, pending.length && rand(s) < 0.8 ? pending : list).id;
+const hasPending = (s: GameState, owner: string) => (s.ownerReturns[owner] ?? 0) < LETTER_THRESHOLDS[2];
+/**
+ * 品物の種類から持ち主を決める。
+ * - owners.json の items で決まっている品は、その持ち主のもの
+ * - まだ一度も品を返していない持ち主には、最初の手紙で触れている品（items[0]）から届く
+ * - 誰の品とも決まっていない品は、すでに知り合った持ち主（または仮の持ち主）のものにする。いなければ「その世界の誰か」
+ * 戻り値の type は、上の規則で差し替わることがある
+ */
+export function assignOwner(s: GameState, world: string, type: string): { type: string; owner: string } {
+  const fixed = ITEM_OWNER[type];
+  if (fixed) {
+    const o = OWNER[fixed];
+    if ((s.ownerReturns[fixed] ?? 0) === 0 && o.items && o.items[0] !== type) return { type: o.items[0], owner: fixed };
+    return { type, owner: fixed };
+  }
+  const list = OWNERS_BY_WORLD[world].filter(o => !o.items?.length || (s.ownerReturns[o.id] ?? 0) > 0);
+  if (!list.length) return { type, owner: '' };
+  const pending = list.filter(o => hasPending(s, o.id));
+  return { type, owner: pick(s, pending.length && rand(s) < 0.8 ? pending : list).id };
+}
+/** 物語が進むよう、手紙の残っている持ち主の品を少し出やすくする */
+function pickType(s: GameState, world: string): string {
+  if (rand(s) < 0.45) {
+    const cands = OWNERS_BY_WORLD[world].filter(o => o.items?.length && hasPending(s, o.id));
+    if (cands.length) { const o = pick(s, cands); return pick(s, o.items!); }
+  }
+  return pick(s, ITEMS_BY_WORLD[world]).id;
 }
 function makeChoices(s: GameState, world: string): { choices: string[]; strike: string | null } {
-  const open = B.openWorlds(s).filter(w => w !== world);
-  const others = WORLDS.map(w => w.id).filter(w => w !== world);
-  const decoys: string[] = [];
-  if (open.length) decoys.push(pick(s, open));
-  while (decoys.length < 2) {
-    const c = pick(s, others);
-    if (!decoys.includes(c)) decoys.push(c);
-  }
+  // 外れは開通済みの世界から。足りなければ「次に開通する世界」を混ぜる（地図の？と食い違わないよう、遠い世界は出さない）
+  const openAll = B.openWorlds(s);
+  const pool = shuffle(s, openAll.filter(w => w !== world));
+  const upcoming = WORLDS.map(w => w.id).filter(w => !openAll.includes(w) && w !== world);
+  const decoys: string[] = pool.slice(0, 2);
+  for (const w of upcoming) { if (decoys.length >= 2) break; decoys.push(w); }
   const choices = shuffle(s, [world, ...decoys]);
   const hint = B.hasMechanic(s, 'hint') || s.staff.some(x => x.role === 'appraiser' && trait('appraiser', x.trait).hint);
   return { choices, strike: hint ? decoys[decoys.length - 1] : null };
@@ -99,17 +119,18 @@ export function spawnItems(s: GameState, n: number, t: number, tutorial = false)
     let world = open[0];
     let x = rand(s) * wsum;
     for (let i = 0; i < open.length; i++) { x -= weights[i]; if (x <= 0) { world = open[i]; break; } }
-    let type = pick(s, ITEMS_BY_WORLD[world]).id;
-    let owner = '';
+    let type = pickType(s, world);
+    let owner: string | null = null;
     // 依頼品が混じることがある
     if (activeReq.length && rand(s) < 0.12) {
       const rq = pick(s, activeReq);
       world = rq.world; type = rq.type; owner = rq.owner;
     }
+    if (owner === null) { const a = assignOwner(s, world, type); type = a.type; owner = a.owner; }
     const { choices, strike } = makeChoices(s, world);
     const it: ItemInst = {
-      id: s.nextId++, type, world, owner: owner || pickOwner(s, world),
-      rarity: rollRarity(s), damaged: tutorial ? k === 2 : rand(s) < B.DAMAGE_CHANCE,
+      id: s.nextId++, type, world, owner: owner ?? "",
+      rarity: rollRarity(s), damaged: tutorial ? k === 2 : rand(s) < B.damageChance(world),
       stage: 'gate', verdict: null, choices, strike, repaired: false, autoFeeBonus: 0, arrivedAt: t
     };
     s.items.push(it);
@@ -124,8 +145,13 @@ export function collect(s: GameState, t: number): number {
   const room = B.storageCap(s) - storageUsed(s);
   const gateItems = s.items.filter(i => i.stage === 'gate');
   const n = Math.max(0, Math.min(room, gateItems.length));
-  const auto = B.rlv(s, 'auto_assign') > 0;
-  for (let i = 0; i < n; i++) gateItems[i].stage = auto ? 'qAppraise' : 'unknown';
+  const auto = B.rlv(s, 'auto_assign') > 0 && s.settings.autoAssign;
+  const req = new Set(s.requests.filter(q => !q.done).map(q => q.type));
+  // 珍品・逸品と依頼品は、自分で鑑定できるよう手元に残す
+  for (let i = 0; i < n; i++) {
+    const it = gateItems[i];
+    it.stage = auto && it.rarity === 0 && !req.has(it.type) ? 'qAppraise' : 'unknown';
+  }
   if (n) assignWork(s, t);
   return n;
 }
@@ -139,10 +165,10 @@ export function assignWork(s: GameState, t: number) {
     if (st.task) continue;
     if (st.role === 'appraiser') {
       const it = s.items.find(i => i.stage === 'qAppraise');
-      if (it) { it.stage = 'appraising'; st.task = { kind: 'appraise', item: it.id, start: t, end: t + B.appraiseTime(s, st) }; }
+      if (it) { it.stage = 'appraising'; st.task = { kind: 'appraise', item: it.id, start: t, end: t + B.appraiseTime(s, st, it.world) }; }
     } else if (st.role === 'repairer') {
       const it = s.items.find(i => i.stage === 'qRepair');
-      if (it) { it.stage = 'repairing'; st.task = { kind: 'repair', item: it.id, start: t, end: t + B.repairTime(s, st) }; }
+      if (it) { it.stage = 'repairing'; st.task = { kind: 'repair', item: it.id, start: t, end: t + B.repairTime(s, st, it.world) }; }
     } else if (st.role === 'courier' && B.rlv(s, 'auto_dispatch') > 0) {
       const counts: Record<string, number> = {};
       for (const it of s.items) if (it.stage === 'ready') counts[it.world] = (counts[it.world] ?? 0) + 1;
@@ -160,6 +186,9 @@ export function tryQueueRepair(s: GameState, it: ItemInst): boolean {
   return true;
 }
 
+/** 速達の前払い（見込み礼金の3割） */
+export const expressCost = (s: GameState, items: ItemInst[]) => Math.round(items.reduce((a, it) => a + B.itemFee(s, it), 0) * 0.3);
+
 export function dispatch(s: GameState, st: Staff, world: string, t: number, express: boolean): number {
   const ready = s.items.filter(i => i.stage === 'ready' && i.world === world);
   // 依頼品・高価な品から先に持っていく
@@ -167,6 +196,11 @@ export function dispatch(s: GameState, st: Staff, world: string, t: number, expr
   ready.sort((a, b) => (req.has(b.type) ? 1 : 0) - (req.has(a.type) ? 1 : 0) || b.rarity - a.rarity || a.id - b.id);
   const take = ready.slice(0, B.courierCap(s, st));
   if (!take.length) return 0;
+  if (express) {
+    const cost = expressCost(s, take);
+    if (s.fee < cost) return 0;
+    s.fee -= cost;
+  }
   for (const it of take) it.stage = 'shipping';
   const dur = s.totals.trips < 3 && s.relocations === 0 ? B.FIRST_TRIP : B.tripTime(s, st, world, express);
   st.task = { kind: 'trip', world, items: take.map(i => i.id), start: t, end: t + dur, express };
@@ -210,25 +244,30 @@ function returnTrip(s: GameState, st: Staff, world: string, ids: number[], expre
   const tr = trait('courier', st.trait);
   let fee = 0, credit = 0, mat = 0, letters = 0, reqs = 0;
   const reqMult = B.REQUEST_MULT * (B.hasMechanic(s, 'bulletin') ? 1.5 : 1);
-  const exp = express ? 0.75 : 1;
+  void express;
   for (const id of ids) {
     const it = s.items.find(i => i.id === id);
     if (!it) continue;
     const ce = s.catalog[it.type];
-    if (ce) ce.r = (ce.r ?? 0) + 1;
-    let f = B.itemFee(s, it) * exp;
-    let c = B.itemCredit(s, it) * (1 + (tr.credit ?? 0)) * exp;
+    if (ce) {
+      ce.r = (ce.r ?? 0) + 1;
+      if (it.owner && !(ce.o ??= []).includes(it.owner) && ce.o.length < 4) ce.o.push(it.owner);
+    }
+    let f = B.itemFee(s, it);
+    let c = B.itemCredit(s, it) * (1 + (tr.credit ?? 0));
     const rq = s.requests.find(q => !q.done && q.type === it.type && q.expiresAt > t);
     if (rq) { rq.done = true; f *= reqMult; c *= reqMult; reqs++; }
     fee += f; credit += c;
     mat += (1 + B.rstat(s, 'material')) * (1 + (tr.material ?? 0));
     // 持ち主と手紙
+    if (!it.owner) continue;
     const before = s.ownerReturns[it.owner] ?? 0;
     const after = before + 1;
     s.ownerReturns[it.owner] = after;
     LETTER_THRESHOLDS.forEach((th, idx) => {
       if (before < th && after >= th) {
-        s.letters.push({ owner: it.owner, world: it.world, idx, at: t, read: false });
+        s.letters.push({ owner: it.owner, world: it.world, idx, at: t, read: false, type: it.type, item: it.id });
+        r?.letterList.push({ owner: it.owner, idx });
         letters++;
       }
     });
@@ -245,8 +284,11 @@ function returnTrip(s: GameState, st: Staff, world: string, ids: number[], expre
 }
 
 function gateArrival(s: GameState, t: number, r: Report | null) {
-  const n = B.perDelivery(s);
-  spawnItems(s, n, t);
+  // ゲート前に置けるのは倉庫と同じ数まで。それを超える便は見送られる（品物は届かないだけで、消えはしない）
+  const waiting = s.items.filter(i => i.stage === 'gate').length;
+  const n = Math.min(B.perDelivery(s), Math.max(0, B.storageCap(s) - waiting));
+  if (n > 0) spawnItems(s, n, t);
+  else if (r) r.deferred++;
   s.gate.deliveries++;
   if (r) r.arrivals += n;
   // 貼り紙の更新
@@ -260,14 +302,16 @@ function gateArrival(s: GameState, t: number, r: Report | null) {
 
 export function postRequest(s: GameState, t: number) {
   const world = pick(s, B.openWorlds(s));
-  const type = pick(s, ITEMS_BY_WORLD[world]).id;
-  if (s.requests.some(q => q.type === type)) return;
-  s.requests.push({ id: s.nextId++, type, world, owner: pickOwner(s, world), postedAt: t, expiresAt: t + B.REQUEST_LIFE, done: false });
+  const a = assignOwner(s, world, pick(s, ITEMS_BY_WORLD[world]).id);
+  if (s.requests.some(q => q.type === a.type)) return;
+  s.requests.push({ id: s.nextId++, type: a.type, world, owner: a.owner, postedAt: t, expiresAt: t + B.REQUEST_LIFE, done: false });
 }
 
 function finishResearch(s: GameState, r: Report | null) {
   const a = s.research.active!;
   s.research.active = null;
+  const next = s.research.next;
+  s.research.next = null;
   s.research.levels[a.id] = (s.research.levels[a.id] ?? 0) + 1;
   const def = RESEARCH_BY_ID[a.id];
   if (r) r.research.push(def.name);
@@ -275,6 +319,8 @@ function finishResearch(s: GameState, r: Report | null) {
     s.materials[def.world] = (s.materials[def.world] ?? 0) + 6;
     log(s, a.end, `${WORLD[def.world].name}への線が開通した。`);
   }
+  // 予約していた研究（費用は予約時に支払い済み）
+  if (next) s.research.active = { id: next, start: a.end, end: a.end + B.researchTime(s, next) };
 }
 
 // ---- 時間を進める ----
@@ -288,7 +334,7 @@ function nextEvent(s: GameState): number {
 /** 経過分を処理する。最終処理から24時間を超えた分は切り捨てる（タイマーをずらす）。 */
 export function advance(s: GameState, now: number, r: Report | null = null): void {
   const gap = now - s.lastTick;
-  if (gap > B.OFFLINE_CAP) shiftTime(s, gap - B.OFFLINE_CAP);
+  if (gap > B.OFFLINE_CAP) { shiftTime(s, gap - B.OFFLINE_CAP); if (r) r.capped = true; }
   let guard = 0;
   while (guard++ < 100000) {
     const t = nextEvent(s);

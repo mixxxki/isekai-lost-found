@@ -13,6 +13,7 @@ const ROLE_ORDER: Role[] = ['appraiser', 'repairer', 'courier'];
 
 function statLine(app: App, st: Staff): string {
   const s = app.s;
+  if (s.totals.trips < 3 && s.relocations === 0 && st.role === 'courier') return `${B.courierCap(s, st)}件まで・研修便のあいだは往復5分`;
   if (st.role === 'appraiser') return `1件 約${span(B.appraiseTime(s, st))}`;
   if (st.role === 'repairer') return `1件 約${span(B.repairTime(s, st))}`;
   return `${B.courierCap(s, st)}件まで・${WORLD.w01.short}往復 約${span(B.tripTime(s, st, 'w01'))}`;
@@ -35,6 +36,7 @@ function staffCard(app: App, st: Staff): HTMLElement {
       h('div', null,
         h('div', { class: 'staff-name' }, st.name, h('span', { class: 'chip' }, ROLES[st.role].name), h('span', { class: 'chip outline', title: tr.desc }, tr.name)),
         h('div', { class: 'staff-stat' }, `${tr.desc}　／　${statLine(app, st)}`),
+        h('div', { class: 'staff-stat' }, `Lv${st.lv + 1}になると：${statLine(app, { ...st, lv: st.lv + 1 })}`),
         taskLine(app, st),
         h('button', { class: 'btn btn-ghost btn-sm mt12', disabled: app.s.fee < cost, onclick: () => app.act(s => A.levelUp(s, st.id)) }, `Lv${st.lv + 1}へ`, h('span', { class: 'cost' }, `礼金 ${num(cost)}`)))));
 }
@@ -53,7 +55,7 @@ export function renderStaff(app: App): HTMLElement {
       root.append(section(ROLES[role].name, `${list.length}/${max}人`,
         h('p', { class: 'note', style: { marginTop: 0 } }, ROLES[role].desc),
         ...list.map(st => staffCard(app, st)),
-        h('div', { class: 'mt12' }, canHire ?
+        h('div', { class: 'mt12', id: `a-hire-${role}` }, canHire ?
           h('div', { class: 'card cand' },
             h('div', { class: 'card-s', style: { marginBottom: '8px' } }, `採用候補（礼金 ${num(cost)}）`),
             ...s.candidates[role].map((c, i) => {

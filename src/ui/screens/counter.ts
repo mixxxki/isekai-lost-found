@@ -2,12 +2,12 @@
 import type { App } from '../app';
 import * as A from '../../core/actions';
 import * as B from '../../core/balance';
-import { ITEM, WORLD, OWNER } from '../../core/data';
+import { ITEM, WORLD } from '../../core/data';
 import { storageUsed } from '../../core/engine';
 import { h, svg, icon } from '../dom';
 import { I } from '../icons';
 import { clock, num } from '../fmt';
-import { section, pbar, countdown, worldDot, tilt } from '../components';
+import { section, pbar, countdown, worldDot, tilt, ownerName } from '../components';
 import { showClosed } from '../modals';
 
 export function renderCounter(app: App): HTMLElement {
@@ -56,6 +56,9 @@ export function renderCounter(app: App): HTMLElement {
         room < gateItems.length ? h('p', { class: 'note' }, `倉庫に入りきらない${gateItems.length - Math.max(0, room)}件はゲート前で待っています（消えません）。`) : null) : null)
   ));
 
+  // ---- 処理能力（1日あたりの目安） ----
+  if (s.totals.trips > 0) root.append(section('一日の処理能力', '目安', flowBars(app)));
+
   // ---- 配達・作業の様子 ----
   const busy = s.staff.filter(x => x.task);
   if (busy.length) {
@@ -81,7 +84,7 @@ export function renderCounter(app: App): HTMLElement {
         ...(reqs.length ? reqs.map(q => h('div', { class: 'poster', style: { '--rot': tilt(q.id, 2.2) } },
           h('h4', null, '探しています'),
           h('div', { class: 'pn' }, ITEM[q.type].name),
-          h('div', { class: 'note', style: { textAlign: 'center', marginTop: '4px' } }, `${OWNER[q.owner]?.name ?? ''}（${WORLD[q.world].short}）`),
+          h('div', { class: 'note', style: { textAlign: 'center', marginTop: '4px' } }, `${ownerName(q.owner, q.world)}（${WORLD[q.world].short}）`),
           h('div', { class: 'pf' }, h('span', null, `報酬×${B.REQUEST_MULT * (B.hasMechanic(s, 'bulletin') ? 1.5 : 1)}`), h('span', null, '残り', countdown(q.expiresAt))))) :
           [h('div', { class: 'board-empty' }, '貼り紙は次の便とともに届きます')])),
       h('p', { class: 'note' }, '依頼品を返却すると、礼金と信用が大きく上乗せされます。届いた品物には「依頼品」の印が付きます。')));
@@ -102,4 +105,33 @@ export function renderCounter(app: App): HTMLElement {
     root.append(section('業務日誌', null, h('ul', { class: 'log card' }, ...s.log.slice(0, 6).map(l => h('li', null, h('time', null, clock(l.at)), h('span', null, l.text))))));
   }
   return root;
+}
+
+/** 到着・鑑定・修理・配達を、1日に何件さばけるかで比べる */
+function flowBars(app: App): HTMLElement {
+  const s = app.s;
+  const open = B.openWorlds(s);
+  // 新しい世界ほど多く届くので、その重みで平均の世界を出す
+  const wts = open.map((_, i) => 1 + i * 0.35);
+  const sum = wts.reduce((a, b) => a + b, 0);
+  const avg = (f: (w: string) => number) => open.reduce((a, w, i) => a + f(w) * wts[i], 0) / sum;
+  const DAY = 24 * B.HOUR;
+  const staff = (r: string) => s.staff.filter(x => x.role === r);
+  const arrive = B.perDelivery(s) * 8;
+  const appraise = staff('appraiser').reduce((a, st) => a + DAY / avg(w => B.appraiseTime(s, st, w)), 0);
+  const dmg = avg(w => B.damageChance(w));
+  const repair = staff('repairer').reduce((a, st) => a + DAY / avg(w => B.repairTime(s, st, w)), 0) / Math.max(0.05, dmg);
+  const deliver = staff('courier').reduce((a, st) => a + B.courierCap(s, st) * DAY / avg(w => B.tripTime(s, st, w)), 0);
+  const rows: [string, number, string][] = [
+    ['到着', arrive, 'ゲートLv・研究'],
+    ['鑑定', appraise, '鑑定士・鑑定室'],
+    ['修理', repair, '修理工・工房'],
+    ['配達', deliver, '配達員（出発させた場合）']
+  ];
+  const max = Math.max(...rows.map(r => r[1]));
+  const low = rows.slice(1).reduce((a, r) => (r[1] < a[1] ? r : a));
+  return h('div', { class: 'card' },
+    h('div', { class: 'flowbars' }, ...rows.map(([k, v]) => h('div', { class: ['flowbar', k === low[0] && v < arrive && 'low'] },
+      h('span', null, k), h('div', { class: 'pbar' }, h('i', { style: { width: `${Math.max(2, v / max * 100)}%` } })), h('span', { class: 'v' }, `${num(v)}件`)))),
+    h('p', { class: 'note', style: { margin: '10px 0 0' } }, low[1] < arrive ? `いま一番詰まりやすいのは「${low[0]}」。強化するなら${low[2]}。` : '届く量より、どの工程も多くさばけています。ゲートを広げる余裕があります。'));
 }

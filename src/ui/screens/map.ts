@@ -40,14 +40,14 @@ export function renderMap(app: App): HTMLElement {
       const busy = s.staff.some(x => x.task?.kind === 'trip' && x.task.world === w.id);
       if (busy) g.append(svg('circle', { r: 22, class: 'halo', stroke: w.color }));
       g.append(
-        svg('circle', { r: 26, fill: 'transparent' }),
+        svg('circle', { r: 32, fill: 'transparent' }),
         svg('circle', { class: 'base', r: 20, fill: w.color, stroke: '#FBF9F4', 'stroke-width': 3, style: 'filter: drop-shadow(0 3px 3px rgba(30,42,40,.35))' }),
         svg('circle', { r: 6, fill: '#FBF9F4', opacity: .9 }),
         svg('text', { y: 36, 'text-anchor': 'middle' }, w.short));
       g.addEventListener('click', () => showWorld(app, w.id));
     } else {
       g.append(
-        svg('circle', { r: 26, fill: 'transparent' }),
+        svg('circle', { r: 32, fill: 'transparent' }),
         svg('circle', { class: 'base', r: 18, fill: '#F3EFE6', stroke: '#7D8683', 'stroke-width': 1.5, 'stroke-dasharray': '4 4' }),
         svg('text', { class: 'q', y: 6, 'text-anchor': 'middle' }, '?'),
         svg('text', { y: 34, 'text-anchor': 'middle', style: 'fill: #7D8683; font-weight: 400; font-size: 10px' }, '未開通'));
@@ -69,10 +69,12 @@ export function renderMap(app: App): HTMLElement {
   // 研究
   const act = s.research.active;
   const list = A.researchList(s);
-  root.append(section('研究', act ? '1件進行中' : `${list.length}件 着手可能`, h('div', { id: 'a-research' },
+  const nx = s.research.next;
+  root.append(section('研究', act ? (nx ? '進行中・予約あり' : '進行中・1件予約できます') : `${list.length}件 着手可能`, h('div', { id: 'a-research' },
     act ? h('div', { class: 'card research active' },
       h('div', { class: 'row' }, icon(I.flask, 20), h('b', { class: 'grow' }, RESEARCH_BY_ID[act.id].name), countdown(act.end)),
-      h('div', { class: 'mt8' }, pbar(act.start, act.end))) : null,
+      h('div', { class: 'mt8' }, pbar(act.start, act.end)),
+      nx ? h('div', { class: 'row mt8' }, h('span', { class: 'card-s grow' }, `予約：${RESEARCH_BY_ID[nx].name}（終わりしだい着手）`), h('button', { class: 'btn btn-ghost btn-sm', onclick: () => app.act(A.cancelReservation) }, '取消')) : null) : null,
     ...list.map(r => {
       const cost = B.researchCost(s, r.id);
       const lv = B.rlv(s, r.id);
@@ -80,28 +82,36 @@ export function renderMap(app: App): HTMLElement {
         h('div', { class: 'row' },
           h('div', { class: 'grow' },
             h('div', { class: 'card-t' }, r.name, r.max > 1 ? h('span', { class: 'lv' }, `　${lv}/${r.max}`) : null),
-            h('div', { class: 'card-s' }, r.desc, r.keep ? '（移転しても残る）' : '')),
+            h('div', { class: 'card-s' }, r.desc, r.keep ? '（移転しても残る）' : ''),
+            r.kind === 'level' && lv > 0 ? h('div', { class: 'card-s', style: { color: 'var(--green)', fontWeight: 700 } }, `現在の合計：${effectNow(r.stat!, (r.per ?? 0) * lv)}`) : null),
         ),
         h('div', { class: 'row mt8' },
           h('span', { class: 'card-s grow' }, `所要 ${span(B.researchTime(s, r.id))}`),
-          h('button', { class: 'btn btn-primary btn-sm', disabled: !!act || s.credit < cost, onclick: () => app.act((st, now) => A.startResearch(st, r.id, now)) }, '着手', h('span', { class: 'cost' }, `信用 ${num(cost)}`))));
+          h('button', { class: 'btn btn-primary btn-sm', disabled: (!!act && !!nx) || s.credit < cost, onclick: () => app.act((st, now) => A.startResearch(st, r.id, now)) }, act ? '予約' : '着手', h('span', { class: 'cost' }, `信用 ${num(cost)}`))));
     }),
     !list.length && !act ? h('div', { class: 'empty' }, '今は着手できる研究がありません。返却を重ねると増えていきます。') : null)));
 
   // 移転
   const next = RELOCATIONS[s.relocations];
-  if (next) {
+  {
     const need = B.relocateAt(s.relocations);
     const p = Math.min(1, s.branchCredit / need);
     root.append(section('支所の移転', `第${s.relocations + 1}期`, h('div', { class: 'card lift', id: 'a-relocate' },
-      h('div', { class: 'card-t' }, `次の移転先：${next.place}`),
-      h('div', { class: 'card-s' }, `新しい世界「${WORLD[next.world].name}」と、仕組み「${next.mechanicName}」が加わります。`),
+      h('div', { class: 'card-t' }, `次の移転先：${A.nextPlace(s.relocations)}`),
+      h('div', { class: 'card-s' }, next ? `新しい世界「${WORLD[next.world].name}」と、仕組み「${next.mechanicName}」が加わります。` : 'ここから先は、永続倍率を積み上げるための移転です。'),
       h('div', { class: 'cap mt12' }, h('div', { class: 'pbar lg' }, h('i', { style: { width: `${p * 100}%` } })), h('span', { class: 'num' }, `${num(s.branchCredit)}/${num(need)}`)),
-      h('p', { class: 'note' }, '今期に得た信用の累計が目標に届くと移転できます。職員（Lv・特性）、図鑑、手紙、謎の記録、開通した世界は引き継がれ、礼金と信用に永続倍率が掛かります。'),
+      h('p', { class: 'note' }, `今期に得た信用の累計が目標に届くと移転できます。職員（Lv・特性）、図鑑、手紙、落とし主の記録、開通した世界は引き継がれます。いま移転すると加算 +${B.relocateGain(s).toFixed(2)}（貯めるほど少し増える）。`),
       h('button', { class: ['btn', 'btn-block', A.canRelocate(s) ? 'btn-red' : 'btn-ghost'], disabled: !A.canRelocate(s), onclick: () => showRelocate(app) }, A.canRelocate(s) ? '移転の手続きへ' : `あと 信用 ${num(Math.max(0, need - s.branchCredit))}`))));
-  } else {
-    root.append(section('支所の移転', null, h('div', { class: 'card' }, 'すべての移転を終えました。ここが最後の支所です。')));
   }
-  root.append(h('p', { class: 'note' }, `永続倍率 ×${B.branchMult(s).toFixed(1)}（移転${s.relocations}回）`));
+  root.append(h('div', { class: 'card' }, h('dl', { class: 'kv' },
+    h('dt', null, '永続倍率'), h('dd', null, `×${B.branchMult(s).toFixed(2)}`),
+    h('dt', null, '　移転の加算'), h('dd', null, `×${(1 + s.perm).toFixed(2)}（${s.relocations}回）`),
+    h('dt', null, '　職員の熟練'), h('dd', null, `×${B.staffMult(s).toFixed(2)}`),
+    h('dt', null, '　図鑑の収集'), h('dd', null, `×${B.archiveMult(s).toFixed(2)}`))));
   return root;
+}
+
+function effectNow(stat: string, v: number): string {
+  const pct = `+${Math.round(v * 100)}%`;
+  return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}` } as Record<string, string>)[stat] ?? pct;
 }
