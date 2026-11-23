@@ -44,7 +44,7 @@ function spend(now: number) {
     const opts: { cost: number; fn: () => any }[] = [];
     for (const f of Object.keys(B.FACILITY) as FacilityId[]) if (s.facilities[f] < B.FACILITY[f].max) opts.push({ cost: B.facilityCost(f, s.facilities[f]) * (f === 'gate' ? 0.6 : 1.2), fn: () => A.upgrade(s, f) });
     for (const r of ['appraiser', 'repairer', 'courier'] as Role[]) if (s.staff.filter(x => x.role === r).length < B.maxStaff(s, r)) opts.push({ cost: B.hireCost(s, r) * (r === 'courier' ? 0.5 : 1.5), fn: () => A.hire(s, r, 0, now) });
-    for (const st of s.staff) opts.push({ cost: B.levelCost(st) * (st.role === 'courier' ? 0.7 : 1.3), fn: () => A.levelUp(s, st.id) });
+    for (const st of s.staff) opts.push({ cost: B.levelCost(st, s) * (st.role === 'courier' ? 0.7 : 1.3), fn: () => A.levelUp(s, st.id) });
     opts.sort((a, b) => a.cost - b.cost);
     if (!opts.length || !opts[0].fn().ok) break;
   }

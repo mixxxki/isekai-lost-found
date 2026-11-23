@@ -1,6 +1,6 @@
 // ===== 時間経過の処理（純粋なロジック。DOMに触れない） =====
 import type { GameState, ItemInst, Staff, Report, Rarity, Role, Candidate } from './types';
-import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait, ITEM_OWNER, OWNER } from './data';
+import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait, ITEM_OWNER, OWNER, WORLD_INDEX } from './data';
 import { rand, pick, shuffle } from './rng';
 import * as B from './balance';
 
@@ -34,7 +34,7 @@ export function createState(now: number, seed = (Math.random() * 2 ** 31) | 0): 
     staff: [], candidates: { appraiser: [], repairer: [], courier: [] },
     items: [],
     gate: { next: now + B.GATE_INTERVAL, deliveries: 0 },
-    research: { active: null, next: null, levels: {} },
+    research: { active: null, queue: [], levels: {} },
     catalog: {}, ownerReturns: {}, letters: [], requests: [],
     mysterySeen: 0, relocations: 0, perm: 0, firstTrip: true,
     totals: { returned: 0, appraised: 0, correct: 0, fee: 0, credit: 0, trips: 0 },
@@ -81,13 +81,18 @@ export function assignOwner(s: GameState, world: string, type: string): { type: 
   const fixed = ITEM_OWNER[type];
   if (fixed) {
     const o = OWNER[fixed];
-    if ((s.ownerReturns[fixed] ?? 0) === 0 && o.items && o.items[0] !== type) return { type: o.items[0], owner: fixed };
+    const n = s.ownerReturns[fixed] ?? 0;
+    // 次の返却で手紙が届くなら、その手紙が触れている品にする（手紙と同封の品を一致させる）
+    const k = LETTER_THRESHOLDS.findIndex(th => th === n + 1);
+    const want = k >= 0 ? (o.letterItems?.[k] ?? (k === 0 ? o.items?.[0] : null)) : null;
+    if (want) return { type: want, owner: fixed };
     return { type, owner: fixed };
   }
-  const list = OWNERS_BY_WORLD[world].filter(o => !o.items?.length || (s.ownerReturns[o.id] ?? 0) > 0);
-  if (!list.length) return { type, owner: '' };
-  const pending = list.filter(o => hasPending(s, o.id));
-  return { type, owner: pick(s, pending.length && rand(s) < 0.8 ? pending : list).id };
+  // 持ち主の決まっていない品は「持ち主不明」（手紙は届かない）。仮の持ち主しかいない世界ではその人たちに
+  const generic = OWNERS_BY_WORLD[world].filter(o => o.generic);
+  if (!generic.length) return { type, owner: '' };
+  const pending = generic.filter(o => hasPending(s, o.id));
+  return { type, owner: pick(s, pending.length && rand(s) < 0.8 ? pending : generic).id };
 }
 /** 物語が進むよう、手紙の残っている持ち主の品を少し出やすくする */
 function pickType(s: GameState, world: string): string {
@@ -173,7 +178,8 @@ export function assignWork(s: GameState, t: number) {
       const counts: Record<string, number> = {};
       for (const it of s.items) if (it.stage === 'ready') counts[it.world] = (counts[it.world] ?? 0) + 1;
       const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-      if (best && best[1] >= Math.min(B.courierCap(s, st), 3)) dispatch(s, st, best[0], t, false);
+      const need = B.hasMechanic(s, 'bigcart') ? Math.ceil(B.courierCap(s, st) / 2) : Math.min(B.courierCap(s, st), 3);
+      if (best && best[1] >= need) dispatch(s, st, best[0], t, false);
     }
   }
 }
@@ -258,7 +264,8 @@ function returnTrip(s: GameState, st: Staff, world: string, ids: number[], expre
     const rq = s.requests.find(q => !q.done && q.type === it.type && q.expiresAt > t);
     if (rq) { rq.done = true; f *= reqMult; c *= reqMult; reqs++; }
     fee += f; credit += c;
-    mat += (1 + B.rstat(s, 'material')) * (1 + (tr.material ?? 0));
+    // 後の世界ほど、返したときにもらえる素材が多い（修理の必要量に見合うように）
+    mat += (1 + B.rstat(s, 'material')) * (1 + (tr.material ?? 0)) * (1 + 0.2 * (WORLD_INDEX[world] ?? 0));
     // 持ち主と手紙
     if (!it.owner) continue;
     const before = s.ownerReturns[it.owner] ?? 0;
@@ -310,8 +317,7 @@ export function postRequest(s: GameState, t: number) {
 function finishResearch(s: GameState, r: Report | null) {
   const a = s.research.active!;
   s.research.active = null;
-  const next = s.research.next;
-  s.research.next = null;
+  const next = s.research.queue.shift();
   s.research.levels[a.id] = (s.research.levels[a.id] ?? 0) + 1;
   const def = RESEARCH_BY_ID[a.id];
   if (r) r.research.push(def.name);
@@ -373,6 +379,9 @@ export function mysteryUnlocked(s: GameState): number {
     if ((q.relocations ?? 0) > s.relocations) break;
     if ((q.worlds ?? 0) > B.openWorlds(s).length) break;
     if ((q.catalog ?? 0) > B.catalogRatio(s)) break;
+    // 今期の進み具合（その期を過ぎていれば満たしたことにする）
+    if (q.progress && s.relocations === (q.relocations ?? 0) && s.branchCredit < q.progress * B.relocateAt(s.relocations)) break;
+    if (q.lettersOf && !q.lettersOf.every(k => { const [o, i] = k.split(':'); return s.letters.some(l => l.owner === o && l.idx === Number(i)); })) break;
     n = m.id;
   }
   return n;

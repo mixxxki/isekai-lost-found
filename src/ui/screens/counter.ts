@@ -18,10 +18,10 @@ export function renderCounter(app: App): HTMLElement {
   // ---- 次の一手 ----
   const adv = A.advice(s, now, 20).filter(a => app.tabUnlocked(a.tab).ok).slice(0, 3);
   const closable = A.canClose(s);
-  root.append(section('次の一手', closable ? '本日の処理は完了' : `${adv.length}件`,
+  root.append(section('次の一手', closable ? 'いまできることは済みました' : `${adv.length}件`,
     closable ? h('button', { class: 'close-card', onclick: () => showClosed(app) },
       h('span', { class: 'mini-sign' }, '閉館'),
-      h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, '本日の窓口を閉める'), h('div', { style: { fontSize: '12px', opacity: .75 } }, '成果と留守中の予定を確認する')),
+      h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, '窓口を閉める'), h('div', { style: { fontSize: '12px', opacity: .75 } }, '成果と、次に開くとよい時刻を確認する')),
       icon(I.arrow)) : null,
     adv.length ? h('div', { class: 'tickets' }, ...adv.map((a, i) =>
       h('button', { class: 'ticket', onclick: () => app.go(a.tab, a.anchor) },
@@ -129,9 +129,13 @@ function flowBars(app: App): HTMLElement {
     ['配達', deliver, '配達員（出発させた場合）']
   ];
   const max = Math.max(...rows.map(r => r[1]));
-  const low = rows.slice(1).reduce((a, r) => (r[1] < a[1] ? r : a));
+  // 配達がたまっているなら、流量の比較より優先して配達を赤にする
+  const short = A.courierShort(s);
+  const low = short ? rows[3] : rows.slice(1).reduce((a, r) => (r[1] < a[1] ? r : a));
+  const tight = !short && low[1] >= arrive && low[1] < arrive * 1.2;
+  const mat = A.materialShort(s);
   return h('div', { class: 'card' },
-    h('div', { class: 'flowbars' }, ...rows.map(([k, v]) => h('div', { class: ['flowbar', k === low[0] && v < arrive && 'low'] },
+    h('div', { class: 'flowbars' }, ...rows.map(([k, v]) => h('div', { class: ['flowbar', ((k === low[0] && (short || v < arrive)) || (k === '修理' && mat.length > 0)) && 'low'] },
       h('span', null, k), h('div', { class: 'pbar' }, h('i', { style: { width: `${Math.max(2, v / max * 100)}%` } })), h('span', { class: 'v' }, `${num(v)}件`)))),
-    h('p', { class: 'note', style: { margin: '10px 0 0' } }, low[1] < arrive ? `いま一番詰まりやすいのは「${low[0]}」。強化するなら${low[2]}。` : '届く量より、どの工程も多くさばけています。ゲートを広げる余裕があります。'));
+    h('p', { class: 'note', style: { margin: '10px 0 0' } }, mat.length ? `修理の素材（${mat.map(w => WORLD[w].material).join('・')}）が足りません。その世界の品を返すと手に入ります。` : short ? '返却待ちがたまっています。配達員を雇うか、Lvを上げましょう。' : low[1] < arrive ? `いま一番詰まりやすいのは「${low[0]}」。強化するなら${low[2]}。` : tight ? `どの工程も届く量をさばけていますが、「${low[0]}」はぎりぎりです。` : '届く量より、どの工程も多くさばけています。ゲートを広げる余裕があります。'));
 }

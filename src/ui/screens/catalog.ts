@@ -48,7 +48,7 @@ export function renderCatalog(app: App): HTMLElement {
     if (fresh.length) root.append(section('新着', `${fresh.length}通`, h('div', { class: 'new-letters' }, ...fresh.slice(0, 12).map(l =>
       h('button', { class: 'new-letter', onclick: () => showLetter(app, l.owner, l.idx) },
         h('span', { class: 'seal-s' }, String(l.idx + 1)),
-        h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700, fontSize: '14px' } }, OWNER[l.owner]?.name ?? ''), h('div', { class: 'card-s' }, `${WORLD[l.world].short}から${l.type ? `・${ITEM[l.type]?.name ?? ''}の礼状` : ''}`)))))));
+        h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700, fontSize: '14px' } }, OWNER[l.owner]?.name ?? ''), h('div', { class: 'card-s' }, `${WORLD[l.world].short}から・${l.idx === 0 && l.type ? `${ITEM[l.type]?.name ?? ''}の礼状` : `便り（${l.idx + 1}通目）`}`)))))));
     for (const w of WORLDS) {
       if (!open.has(w.id)) continue;
       const owners = OWNERS_BY_WORLD[w.id];
@@ -87,5 +87,7 @@ function nextHint(s: GameState, q: MysteryReq): string {
   const need = (q.letters ?? 0) - s.letters.length;
   if (need > 0) return `持ち主たちの手紙が、あと${need}通ほど集まれば綴じられそうだ。`;
   if ((q.catalog ?? 0) > B.catalogRatio(s)) return '図鑑がもう少し埋まれば、何かがわかりそうだ。';
+  if (q.lettersOf) return 'まだ届いていない便りが、どこかにあるらしい。';
+  if (q.progress) return '今期の仕事がもう少し進めば、綴じられそうだ。';
   return 'もうすぐ綴じられる。';
 }

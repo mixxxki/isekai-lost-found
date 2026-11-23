@@ -10,7 +10,7 @@ import { I } from './icons';
 import { num, clock, span, pad } from './fmt';
 import { stringSvg, tilt, STAGE_LABEL, isRequested } from './components';
 import { exportSave, importSave, save, wipe } from '../core/save';
-import { createState } from '../core/engine';
+import { createState, mysteryUnlocked, storageUsed } from '../core/engine';
 
 type Closer = () => void;
 function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { title?: string; onClose?: () => void } = {}) {
@@ -30,11 +30,14 @@ function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { titl
   layer.append(scrim, body);
   document.body.append(layer);
   // つまみを下へ引くと閉じる
-  const grab = body.querySelector<HTMLElement>('.grab')!;
   let y0 = -1;
-  grab.addEventListener('pointerdown', e => { y0 = e.clientY; grab.setPointerCapture(e.pointerId); });
-  grab.addEventListener('pointermove', e => { if (y0 >= 0) body.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; });
-  grab.addEventListener('pointerup', e => { const d = e.clientY - y0; y0 = -1; if (d > 80) close(); else body.style.transform = ''; });
+  for (const handle of [body.querySelector<HTMLElement>('.grab'), body.querySelector<HTMLElement>('.sheet-h')]) {
+    if (!handle) continue;
+    handle.addEventListener('pointerdown', e => { if ((e.target as Element).closest('button')) return; y0 = e.clientY; handle.setPointerCapture(e.pointerId); });
+    handle.addEventListener('pointermove', e => { if (y0 >= 0) body.style.transform = `translateY(${Math.max(0, e.clientY - y0)}px)`; });
+    handle.addEventListener('pointerup', e => { if (y0 < 0) return; const d = e.clientY - y0; y0 = -1; if (d > 80) close(); else body.style.transform = ''; });
+    handle.addEventListener('pointercancel', () => { y0 = -1; body.style.transform = ''; });
+  }
   return { close, body };
 }
 
@@ -46,7 +49,7 @@ export function showGuess(app: App, id: number) {
   const def = ITEM[it.type];
   const content = h('div');
   const { close } = sheet(app, () => [content], { title: '鑑定' });
-  const tag = h('div', { class: 'tag big-tag unknown', style: { '--rot': tilt(it.id, 1) } },
+  const tag = h('div', { class: 'tag big-tag unknown', style: { '--rot': tilt(it.id, 1) }, onclick: () => tag.classList.toggle('open') },
     stringSvg(), h('span', { class: 'hole' }),
     h('div', { class: 'tag-no' }, `No.${pad(it.id)}`),
     h('div', { class: 'tag-name' }, def.name),
@@ -87,7 +90,7 @@ export function showGuess(app: App, id: number) {
         nextOne ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showGuess(app, nextOne.id), 260); } }, '次の品へ', icon(I.arrow, 18)) : null,
         h('button', { class: 'btn btn-ghost', onclick: close }, '閉じる')));
     // 小さい画面でも結果と「次の品へ」が見えるように
-    requestAnimationFrame(() => after.scrollIntoView({ block: 'end', behavior: s.settings.reduceMotion ? 'auto' : 'smooth' }));
+    requestAnimationFrame(() => { const sh = after.closest('.sheet'); sh?.scrollTo({ top: sh.scrollHeight, behavior: s.settings.reduceMotion ? 'auto' : 'smooth' }); });
     if (navigator.vibrate && !s.settings.reduceMotion) navigator.vibrate(right ? 18 : [10, 40, 10]);
   }
   function next() {
@@ -156,7 +159,8 @@ export function showLetter(app: App, ownerId: string, idx: number) {
     h('div', { class: 'letter' }, h('div', { class: 'seal' }, String(idx + 1)), ...text.split('\n').map(p => h('p', { style: { margin: 0 } }, p)), h('div', { class: 'from' }, `―― ${o.name}`)),
     l?.type ? h('div', { class: 'enclosure' }, h('span', { class: 'chip' }, '同封の記録'), `返却品　${itemName}${l.item ? `　No.${pad(l.item)}` : ''}`) : null,
     h('div', { class: 'btn-row' },
-      nextUnread ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showLetter(app, nextUnread.owner, nextUnread.idx), 260); } }, '次の手紙へ', icon(I.arrow, 18)) : null,
+      nextUnread ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showLetter(app, nextUnread.owner, nextUnread.idx), 260); } }, '次の手紙へ', icon(I.arrow, 18))
+        : app.s.mysterySeen < mysteryUnlocked(app.s) ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => app.go('catalog', 'mystery'), 260); } }, '綴じ込まれた頁を読む') : null,
       h('button', { class: 'btn btn-ghost', onclick: () => close() }, '手紙を閉じる'))
   ], { title: `${WORLD[l?.world ?? '']?.short ?? ''}からの手紙` });
   void close;
@@ -177,8 +181,8 @@ export function showIntro(app: App) {
 }
 
 // ---------- 開館（留守中のまとめ） ----------
-export function showReport(app: App, r: Report, pages: { id: number; title: string }[] = []) {
-  const any = r.arrivals || r.appraised || r.repaired || r.trips || r.research.length;
+export function showReport(app: App, r: Report, pages: { id: number; title: string }[] = [], note?: string) {
+  const any = r.arrivals || r.appraised || r.repaired || r.trips || r.research.length || r.deferred || pages.length;
   const lines: [string, string][] = [
     ['留守にしていた時間', span(r.to - r.from)],
     ['ゲートに届いた品', `${r.arrivals}件`],
@@ -190,18 +194,22 @@ export function showReport(app: App, r: Report, pages: { id: number; title: stri
     ['届いた手紙', `${r.letters}通`]
   ];
   if (r.requests) lines.push(['かなった依頼', `${r.requests}件`]);
-  if (r.deferred) lines.push(['見送られた便', `${r.deferred}便（ゲート前が満杯）`]);
+  if (r.deferred) lines.push(['見送られた便', `${r.deferred}便（ゲート前が満杯。回収して空きを作りましょう）`]);
   const senders = [...new Set(r.letterList.map(l => OWNER[l.owner]?.name).filter(Boolean))];
   if (senders.length) lines.push(['手紙の差出人', senders.slice(0, 3).join('、') + (senders.length > 3 ? ` ほか${senders.length - 3}人` : '')]);
   for (const p of pages) lines.push([`綴じ込まれた頁`, `第${p.id}頁「${p.title}」`]);
-  for (const n of r.research) lines.push(['完了した研究', n]);
+  const done: Record<string, number> = {};
+  for (const n of r.research) done[n] = (done[n] ?? 0) + 1;
+  for (const [n, c] of Object.entries(done)) lines.push(['完了した研究', c > 1 ? `${n}（${c}段）` : n]);
   sheet(app, close => [
     h('div', { class: 'receipt' }, h('h3', null, '留守中の記録'),
       ...lines.map(([k, v], i) => h('div', { class: 'ln', style: { animationDelay: `${0.25 + i * 0.06}s` } }, h('span', null, k), h('b', null, v))),
       !any ? h('p', { class: 'note', style: { textAlign: 'center' } }, '静かな留守番でした。') : null,
-      r.capped ? h('p', { class: 'note', style: { textAlign: 'center', margin: '8px 0 4px' } }, '留守中の業務は、最後に閉じてから24時間分までしか進みません。') : null),
+      r.capped ? h('p', { class: 'note', style: { textAlign: 'center', margin: '8px 0 4px' } }, '留守中の業務は、最後に閉じてから24時間分までしか進みません。') : null,
+      note ? h('div', { class: 'journal' }, h('span', { class: 'chip' }, '日誌の余白'), h('p', null, note)) : null),
     h('div', { class: 'btn-row' },
-      r.letterList.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'letters'), 260); } }, '手紙を読む') : null,
+      r.letterList.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'letters'), 260); } }, '手紙を読む')
+        : pages.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'mystery'), 260); } }, '記録を読む') : null,
       h('button', { class: 'btn btn-primary', onclick: close }, '窓口を開ける'))
   ], { title: '開館' });
 }
@@ -211,10 +219,13 @@ export function showClosed(app: App) {
   const s = app.s;
   const now = Date.now();
   app.modalOpen++;
+  app.toasts.classList.add('top');
   const ss = s.session;
   const rec = A.recommendedOpen(s, now);
   const el = h('div', { class: 'closed', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'inner' },
     h('div', { class: 'sign-wrap' }, h('div', { class: 'sign' }, h('div', { class: 'sign-board' }, '本日閉館'))),
+    h('div', { class: 'rec' }, h('small', null, '次に開くおすすめ時刻'), h('div', { class: 't' }, clock(rec, now)), h('small', null, `いまから約${span(rec - now)}後`),
+      h('p', { class: 'rec-note' }, `アプリを閉じて大丈夫です。品物は消えません。倉庫はあと約${span(Math.max(0, (B.storageCap(s) - storageUsed(s))) / B.perDelivery(s) * B.GATE_INTERVAL)}ぶんの空きがあります。`)),
     h('h2', null, '今回の成果'),
     h('div', { class: 'panel' },
       ...[['回収', `${ss.collected ?? 0}件`], ['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['配達に出した品', `${ss.shipped ?? 0}件（${ss.dispatched}人）`], ['見込み礼金', `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', `+${num(ss.fee)}`], ['受け取った信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
@@ -223,7 +234,6 @@ export function showClosed(app: App) {
     h('div', { class: 'panel' }, ...A.timers(s).map(t => h('div', { class: 'ln' },
       h('span', { class: 'row', style: { gap: '8px' } }, t.color ? h('span', { class: 'wdot', style: { background: t.color } }) : null, t.label),
       h('b', null, clock(t.at, now))))),
-    h('div', { class: 'rec' }, h('small', null, '次に開くおすすめ時刻'), h('div', { class: 't' }, clock(rec, now)), h('small', null, `いまから約${span(rec - now)}後`)),
     s.items.some(i => i.stage === 'ready') ? h('p', { style: { fontSize: '12.5px', opacity: .8, textAlign: 'center', margin: '12px 0 0' } }, `返却待ち${s.items.filter(i => i.stage === 'ready').length}件は、配達員が戻りしだい出せます。`) : null,
     h('div', { class: 'actions' }, h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-tag', onclick: () => done() }, '窓口に戻る')))));
@@ -231,7 +241,7 @@ export function showClosed(app: App) {
   save(s);
   function done() {
     el.style.transition = 'opacity .25s'; el.style.opacity = '0';
-    setTimeout(() => { el.remove(); app.modalOpen--; app.render(); }, 250);
+    setTimeout(() => { el.remove(); app.modalOpen--; app.toasts.classList.remove('top'); app.render(); }, 250);
   }
 }
 
@@ -267,14 +277,14 @@ export function showRelocate(app: App) {
       next ? h('div', { class: 'ln' }, h('span', null, '新しい世界'), h('b', null, WORLD[next.world].name)) : null,
       next ? h('div', { class: 'ln' }, h('span', null, '新しい仕組み'), h('b', null, next.mechanicName)) : null,
       next ? h('p', { class: 'note' }, next.mechanicDesc) : h('p', { class: 'note' }, '終点の先の窓口。新しい世界はないが、永続倍率がさらに積み上がる。'),
-      h('div', { class: 'ln' }, h('span', null, '移転の加算'), h('b', null, `+${s.perm.toFixed(2)} → +${(s.perm + gain).toFixed(2)}`)),
+      h('div', { class: 'ln' }, h('span', null, '移転の倍率'), h('b', null, `×${(1 + s.perm).toFixed(2)} → ×${(1 + s.perm + gain).toFixed(2)}（+${gain.toFixed(2)}）`)),
       h('p', { class: 'note' }, '目標を超えて信用を貯めてから移転すると、加算が少し増えます（最大+1.0まで上乗せ）。')),
     h('div', { class: 'card' },
       h('div', { class: 'card-t' }, '引き継ぐもの'), h('p', { class: 'note', style: { margin: '4px 0 10px' } }, '職員（Lv・特性。Lvの合計が倍率になる）、図鑑（収集率が倍率になる）、持ち主の手紙、落とし主の記録、開通した世界'),
-      h('div', { class: 'card-t' }, '置いていくもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残す）、段階式の研究（開通と自動化の規程は残る）')),
+      h('div', { class: 'card-t' }, '置いていくもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残す）、段階式の研究の残り半分（開通・自動化の規程と、研究の半分は残る）')),
     h('div', { class: 'btn-row mt16' },
       h('button', { class: 'btn btn-ghost', onclick: close }, 'やめておく'),
-      h('button', { class: 'btn btn-red', onclick: () => { close(); app.act(A.relocate); app.go('counter'); } }, '移転する'))
+      h('button', { class: 'btn btn-red', onclick: () => { close(); app.act(A.relocate); setTimeout(() => { app.go('counter'); app.main.scrollTop = 0; }, 280); } }, '移転する'))
   ], { title: '支所の移転' });
 }
 

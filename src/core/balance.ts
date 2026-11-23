@@ -18,7 +18,9 @@ export const REQUEST_LIFE = 24 * HOUR;
 export const REQUEST_MULT = 3;
 export const RELOCATE_BASE = 1_000_000;
 /** 移転に必要な信用（1回目は1M。以降は段階的に上がる） */
-export const relocateAt = (n: number) => RELOCATE_BASE * Math.pow(10, n);
+export const relocateAt = (n: number) => n <= 5 ? RELOCATE_BASE * Math.pow(10, n) : RELOCATE_BASE * 1e5 * Math.pow(3, n - 5);
+/** 終点の先へ移転した回数（6回目以降） */
+export const beyond = (s: GameState) => Math.max(0, s.relocations - 6);
 
 export const FACILITY: Record<FacilityId, { name: string; base: number; growth: number; max: number; desc: string }> = {
   gate:      { name: '転送ゲート', base: 150, growth: 1.9, max: 30, desc: '一度に届く落とし物の数と、雇える配達員の数が増える。' },
@@ -27,6 +29,10 @@ export const FACILITY: Record<FacilityId, { name: string; base: number; growth: 
   workshop:  { name: '工房',       base: 100, growth: 2.1, max: 12, desc: '雇える修理工の数と、修理の速さが増す。' }
 };
 export const facilityCost = (id: FacilityId, lv: number) => Math.round(FACILITY[id].base * Math.pow(FACILITY[id].growth, lv - 1));
+/** 施設の上限（終点の先へ移転するたびにゲートと倉庫が広がる） */
+export const facilityMax = (s: GameState, id: FacilityId) => FACILITY[id].max + (id === 'gate' || id === 'storage' ? 2 * beyond(s) : 0);
+/** 研究の上限（終点の先へ移転するたびに、段階式の研究が5段ずつ広がる） */
+export const researchMax = (s: GameState, id: string) => RESEARCH_BY_ID[id].max + (RESEARCH_BY_ID[id].kind === 'level' ? 5 * beyond(s) : 0);
 
 export const hasMechanic = (s: GameState, m: Mechanic) => RELOCATIONS.some(r => r.n <= s.relocations && r.mechanic === m);
 export const rlv = (s: GameState, id: string) => s.research.levels[id] ?? 0;
@@ -73,10 +79,11 @@ export const hireCost = (s: GameState, role: Role) => {
   const base = { appraiser: 80, repairer: 120, courier: 100 }[role];
   return Math.round(base * Math.pow(5, n));
 };
-export const levelCost = (st: Staff) => {
+export const levelCost = (st: Staff, s: { relocations: number }) => {
   const base = { appraiser: 40, repairer: 50, courier: 60 }[st.role];
   const cheap = trait(st.role, st.trait).cheap ?? 0;
-  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap));
+  // 移転するたびに上げ直しが高くなる（引き継いだLvほど価値がある）
+  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap) * Math.pow(2.5, s.relocations));
 };
 /** 後の世界の品ほど鑑定に時間がかかる */
 export const appraiseBase = (world: string) => APPRAISE_BASE * (1 + 0.6 * (WORLD_INDEX[world] ?? 0));
@@ -131,20 +138,20 @@ export function relocateGain(s: GameState): number {
   const need = relocateAt(s.relocations);
   const over = Math.max(1, s.branchCredit / need);
   const base = s.relocations < RELOCATIONS.length ? 0.5 : 0.25;
-  return base + Math.min(1, 0.5 * Math.log(over) / Math.log(10));
+  return base + Math.min(1, 0.6 * Math.log10(over));
 }
 
 // ---- 報酬 ----
 export function itemFee(s: GameState, it: { world: string; rarity: number; verdict: string | null; repaired: boolean; autoFeeBonus: number }): number {
   const w = WORLD[it.world];
   const guess = it.verdict === 'correct' ? (hasMechanic(s, 'hint') ? 3 : 2) : 1;
-  const fussy = it.repaired ? s.staff.filter(x => x.role === 'repairer').reduce((a, x) => Math.max(a, trait('repairer', x.trait).repairFee ?? 0), 0) : 0;
+  const fussy = (it.repaired ? 0.05 * (s.facilities.workshop - 1) : 0) + (it.verdict === 'auto' ? 0.03 * (s.facilities.appraisal - 1) : 0) + (it.repaired ? s.staff.filter(x => x.role === 'repairer').reduce((a, x) => Math.max(a, trait('repairer', x.trait).repairFee ?? 0), 0) : 0);
   return w.value * 1.5 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'fee')) * (1 + fussy + it.autoFeeBonus) * catalogBonus(s, it.world) * branchMult(s);
 }
 export function itemCredit(s: GameState, it: { world: string; rarity: number; verdict?: string | null }): number {
   const w = WORLD[it.world];
   const guess = it.verdict === 'correct' ? (hasMechanic(s, 'hint') ? 1.5 : 1.2) : 1;
-  return w.value * 2.0 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'credit')) * catalogBonus(s, it.world) * branchMult(s);
+  return w.value * 1.7 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'credit')) * catalogBonus(s, it.world) * branchMult(s);
 }
 
 // ---- 研究 ----

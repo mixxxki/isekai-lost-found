@@ -70,7 +70,7 @@ export function renderStorage(app: App): HTMLElement {
   const ready = by(['ready']);
   const idle = A.idleCouriers(s);
   root.append(section('返却待ち', `${ready.length}件・手の空いた配達員${idle.length}人`,
-    h('div', { id: 'a-ready' }, ready.length ? h('div', null, ...[...new Set(ready.map(i => i.world))].map(w => {
+    h('div', { id: 'a-ready' }, ready.length ? h('div', null, ...[...new Set(ready.map(i => i.world))].sort((a, b) => ready.filter(i => i.world === b).length - ready.filter(i => i.world === a).length).map(w => {
       const list = ready.filter(i => i.world === w);
       const c = idle[0];
       const express = B.hasMechanic(s, 'express');

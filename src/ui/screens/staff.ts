@@ -6,7 +6,7 @@ import * as B from '../../core/balance';
 import { ROLES, trait, WORLD, ITEM } from '../../core/data';
 import { h, icon } from '../dom';
 import { I } from '../icons';
-import { num, span } from '../fmt';
+import { num, dur } from '../fmt';
 import { section, seg, pbar, countdown } from '../components';
 
 const ROLE_ORDER: Role[] = ['appraiser', 'repairer', 'courier'];
@@ -14,9 +14,10 @@ const ROLE_ORDER: Role[] = ['appraiser', 'repairer', 'courier'];
 function statLine(app: App, st: Staff): string {
   const s = app.s;
   if (s.totals.trips < 3 && s.relocations === 0 && st.role === 'courier') return `${B.courierCap(s, st)}件まで・研修便のあいだは往復5分`;
-  if (st.role === 'appraiser') return `1件 約${span(B.appraiseTime(s, st))}`;
-  if (st.role === 'repairer') return `1件 約${span(B.repairTime(s, st))}`;
-  return `${B.courierCap(s, st)}件まで・${WORLD.w01.short}往復 約${span(B.tripTime(s, st, 'w01'))}`;
+  // 強化の差が見えるよう、秒・分まで出す
+  if (st.role === 'appraiser') return `${WORLD.w01.short}の品1件 ${dur(B.appraiseTime(s, st))}`;
+  if (st.role === 'repairer') return `${WORLD.w01.short}の品1件 ${dur(B.repairTime(s, st))}`;
+  return `${B.courierCap(s, st)}件まで・${WORLD.w01.short}往復 ${dur(B.tripTime(s, st, 'w01'))}`;
 }
 
 function taskLine(app: App, st: Staff): HTMLElement {
@@ -29,7 +30,7 @@ function taskLine(app: App, st: Staff): HTMLElement {
 
 function staffCard(app: App, st: Staff): HTMLElement {
   const tr = trait(st.role, st.trait);
-  const cost = B.levelCost(st);
+  const cost = B.levelCost(st, app.s);
   return h('div', { class: 'card lift' },
     h('div', { class: 'staff' },
       h('div', { class: ['badge', app.fresh(`lv${st.id}-${st.lv}`) && st.lv > 1 && 'lvup'] }, h('small', null, 'Lv'), h('b', null, String(st.lv))),
@@ -73,18 +74,18 @@ export function renderStaff(app: App): HTMLElement {
       const t = { ...s, facilities: { ...s.facilities, [f]: lv } };
       if (f === 'gate') return `1便 ${B.perDelivery(t)}件・配達員 ${B.maxStaff(t, 'courier')}人まで`;
       if (f === 'storage') return `珍品率 ${(B.rareChance(t)[0] * 100).toFixed(1)}%・貼り紙 ${B.requestSlots(t)}枚`;
-      if (f === 'appraisal') return `鑑定士 ${lv}人まで・速さ +${(lv - 1) * 5}%`;
-      return `修理工 ${lv}人まで・速さ +${(lv - 1) * 5}%`;
+      if (f === 'appraisal') return `鑑定士 ${lv}人まで・速さ +${(lv - 1) * 5}%・任せた品の礼金 +${(lv - 1) * 3}%`;
+      return `修理工 ${lv}人まで・速さ +${(lv - 1) * 5}%・直した品の礼金 +${(lv - 1) * 5}%`;
     };
     root.append(section('施設', null, h('div', { id: 'a-facilities' }, ...facs.map(f => {
-      const lv = s.facilities[f], def = B.FACILITY[f], max = lv >= def.max, cost = B.facilityCost(f, lv);
+      const lv = s.facilities[f], def = B.FACILITY[f], cap = B.facilityMax(s, f), max = lv >= cap, cost = B.facilityCost(f, lv);
       return h('div', { class: 'card lift' },
         h('div', { class: 'card-h' },
           h('div', { class: 'fac-ill' }, icon(ill[f], 28)),
           h('div', { class: 'grow' },
             h('div', { class: 'card-t' }, def.name, ' ', h('span', { class: 'num', style: { fontWeight: 400, fontSize: '13px', color: 'var(--ink-3)' } }, `Lv${lv}`)),
             h('div', { class: 'card-s' }, def.desc),
-            h('div', { class: 'lv-pips' }, ...Array.from({ length: Math.min(def.max, 30) }, (_, i) => h('i', { class: i < lv ? 'on' : '' }))))),
+            h('div', { class: 'lv-pips' }, ...Array.from({ length: Math.min(cap, 40) }, (_, i) => h('i', { class: i < lv ? 'on' : '' }))))),
         h('div', { class: 'mt12', style: { fontSize: '12.5px' } },
           h('div', null, h('span', { class: 'muted' }, '現在　'), effect(f, lv)),
           !max ? h('div', null, h('span', { class: 'muted' }, '拡張後　'), effect(f, lv + 1)) : null),

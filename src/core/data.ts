@@ -6,6 +6,7 @@ import researchJson from '../data/research.json';
 import staffJson from '../data/staff.json';
 import relocJson from '../data/relocations.json';
 import mapJson from '../data/map.json';
+import journalJson from '../data/journal.json';
 import type { WorldDef, ItemDef, OwnerDef, MysteryDef, ResearchDef, TraitDef, RelocationDef, Role } from './types';
 
 export const WORLDS: WorldDef[] = worldsJson as WorldDef[];
@@ -62,6 +63,8 @@ for (const w of WORLDS) {
 }
 export const OWNER: Record<string, OwnerDef> = {};
 for (const list of Object.values(OWNERS_BY_WORLD)) for (const o of list) OWNER[o.id] = o;
+/** 業務日誌の余白（開館のたびに一行ずつ） */
+export const JOURNAL: string[] = journalJson as string[];
 export const LETTER_THRESHOLDS = [1, 3, 6];
 /** 品物の種類 → 持ち主（owners.json の items で指定されたもの） */
 export const ITEM_OWNER: Record<string, string> = {};

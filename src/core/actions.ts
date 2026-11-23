@@ -2,7 +2,7 @@
 import type { GameState, Role, FacilityId, ItemInst } from './types';
 import { RESEARCH_BY_ID, RESEARCH, RELOCATIONS, WORLD, ROLES, trait } from './data';
 import * as B from './balance';
-import { collect, assignWork, tryQueueRepair, dispatch, finishAppraisal, addStaff, refreshCandidates, createState, log, assignOwner, storageUsed, mysteryUnlocked } from './engine';
+import { collect, assignWork, advance, tryQueueRepair, dispatch, finishAppraisal, addStaff, refreshCandidates, createState, log, assignOwner, storageUsed, mysteryUnlocked } from './engine';
 
 export type Result = { ok: true; msg?: string } | { ok: false; msg: string };
 const ok = (msg?: string): Result => ({ ok: true, msg });
@@ -93,7 +93,7 @@ export function hire(s: GameState, role: Role, idx: number, now: number): Result
 export function levelUp(s: GameState, id: number): Result {
   const st = s.staff.find(x => x.id === id);
   if (!st) return ng('職員が見つかりません');
-  const cost = B.levelCost(st);
+  const cost = B.levelCost(st, s);
   if (s.fee < cost) return ng('礼金が足りません');
   s.fee -= cost; st.lv++;
   acted(s);
@@ -102,7 +102,7 @@ export function levelUp(s: GameState, id: number): Result {
 
 export function upgrade(s: GameState, id: FacilityId): Result {
   const lv = s.facilities[id];
-  if (lv >= B.FACILITY[id].max) return ng('これ以上は拡張できません');
+  if (lv >= B.facilityMax(s, id)) return ng('これ以上は拡張できません');
   const cost = B.facilityCost(id, lv);
   if (s.fee < cost) return ng('礼金が足りません');
   s.fee -= cost; s.facilities[id]++;
@@ -112,37 +112,60 @@ export function upgrade(s: GameState, id: FacilityId): Result {
 
 export function researchAvailable(s: GameState, id: string): boolean {
   const r = RESEARCH_BY_ID[id];
-  if (B.rlv(s, id) >= r.max) return false;
+  if (B.rlv(s, id) >= B.researchMax(s, id)) return false;
   if (r.kind === 'world' && r.world && B.openWorlds(s).includes(r.world)) return false;
   const q = r.req;
   if (q?.returns && s.totals.returned < q.returns) return false;
   if (q?.research && B.rlv(s, q.research) < 1 && !(RESEARCH_BY_ID[q.research].world && B.openWorlds(s).includes(RESEARCH_BY_ID[q.research].world!))) return false;
   return true;
 }
-export const researchList = (s: GameState) => RESEARCH.filter(r => researchAvailable(s, r.id));
+/** 進行中の研究と同じものを予約するなら一段上を数える */
+export const RESEARCH_QUEUE = 3;
+const pendingLv = (s: GameState, id: string) => B.rlv(s, id) + (s.research.active?.id === id ? 1 : 0) + s.research.queue.filter(q => q === id).length;
+/** 着手・予約にかかる費用（進行中と同じ研究を予約するなら一段上の費用） */
+export const researchCostFor = (s: GameState, id: string) => Math.round(RESEARCH_BY_ID[id].cost * Math.pow(RESEARCH_BY_ID[id].growth, pendingLv(s, id)));
+export const researchTimeFor = (s: GameState, id: string) => RESEARCH_BY_ID[id].hours * B.HOUR * Math.pow(RESEARCH_BY_ID[id].hoursGrowth ?? 1, pendingLv(s, id));
+/** 一覧に出す研究（進行中のものは、もう一段取れる場合だけ） */
+export const researchList = (s: GameState) => RESEARCH.filter(r => researchAvailable(s, r.id) && pendingLv(s, r.id) < B.researchMax(s, r.id));
 
 export function startResearch(s: GameState, id: string, now: number): Result {
-  if (s.research.active && s.research.next) return ng('予約は一件までです');
+  if (s.research.active && s.research.queue.length >= RESEARCH_QUEUE) return ng(`予約は${RESEARCH_QUEUE}件までです`);
   if (!researchAvailable(s, id)) return ng('まだ着手できません');
   const reserving = !!s.research.active;
-  if (reserving && s.research.active!.id === id && B.rlv(s, id) + 1 >= RESEARCH_BY_ID[id].max) return ng('これ以上は予約できません');
-  // 予約の場合、費用は今の段階＋1で計算する（進行中の研究が同じものなら一段上）
-  const cost = reserving && s.research.active!.id === id
-    ? Math.round(RESEARCH_BY_ID[id].cost * Math.pow(RESEARCH_BY_ID[id].growth, B.rlv(s, id) + 1))
-    : B.researchCost(s, id);
+  if (pendingLv(s, id) >= B.researchMax(s, id)) return ng('これ以上は予約できません');
+  const cost = researchCostFor(s, id);
   if (s.credit < cost) return ng('信用が足りません');
   s.credit -= cost;
   acted(s);
-  if (reserving) { s.research.next = id; return ok(`「${RESEARCH_BY_ID[id].name}」を予約しました`); }
+  if (reserving) { s.research.queue.push(id); return ok(`「${RESEARCH_BY_ID[id].name}」を予約しました`); }
   s.research.active = { id, start: now, end: now + B.researchTime(s, id) };
   return ok(`「${RESEARCH_BY_ID[id].name}」に着手しました`);
 }
+/** 進行中の研究を今すぐ終える費用（残り1時間あたり、その段の費用の半分。最低はその段の費用の1割） */
+export function rushCost(s: GameState): number {
+  const a = s.research.active;
+  if (!a) return 0;
+  const left = Math.max(0, a.end - Date.now()) / B.HOUR;
+  const base = RESEARCH_BY_ID[a.id].cost * Math.pow(RESEARCH_BY_ID[a.id].growth, B.rlv(s, a.id));
+  return Math.round(base * Math.max(0.1, 0.5 * left));
+}
+export function rushResearch(s: GameState, now: number): Result {
+  const a = s.research.active;
+  if (!a) return ng('進行中の研究がありません');
+  const cost = rushCost(s);
+  if (s.credit < cost) return ng('信用が足りません');
+  s.credit -= cost;
+  const d = a.end - now;
+  a.end = now; a.start = Math.min(a.start, now - 1);
+  advance(s, now);
+  acted(s);
+  return ok(d > 0 ? '研究を早めて終えました' : '研究が終わりました');
+}
+/** 最後に入れた予約を取り消して、費用を払い戻す */
 export function cancelReservation(s: GameState): Result {
-  const id = s.research.next;
+  const id = s.research.queue.pop();
   if (!id) return ng('予約はありません');
-  const same = s.research.active?.id === id;
-  s.credit += same ? Math.round(RESEARCH_BY_ID[id].cost * Math.pow(RESEARCH_BY_ID[id].growth, B.rlv(s, id) + 1)) : B.researchCost(s, id);
-  s.research.next = null;
+  s.credit += researchCostFor(s, id);
   return ok('予約を取り消しました');
 }
 
@@ -154,12 +177,19 @@ export function readLetter(s: GameState, owner: string, idx: number) {
 // ---- 移転（周回） ----
 export const canRelocate = (s: GameState) => s.branchCredit >= B.relocateAt(s.relocations);
 /** 移転先の名前（6回目以降は終点の先へ） */
-export const nextPlace = (n: number) => RELOCATIONS[n]?.place ?? `終点 第${n - RELOCATIONS.length + 2}窓口`;
+export const nextPlace = (n: number) => RELOCATIONS[n]?.place ?? `終点 第${n - RELOCATIONS.length + 1}窓口`;
 export function relocate(s: GameState, now: number): Result {
   if (!canRelocate(s)) return ng('まだ移転できません');
+  while (s.research.queue.length) cancelReservation(s);
   const fresh = createState(now, s.rng);
   const keepResearch: Record<string, number> = {};
-  for (const [id, lv] of Object.entries(s.research.levels)) if (RESEARCH_BY_ID[id]?.keep) keepResearch[id] = lv;
+  // 開通と自動化は全部、段階式の研究は半分を引き継ぐ
+  for (const [id, lv] of Object.entries(s.research.levels)) {
+    const r = RESEARCH_BY_ID[id];
+    if (!r) continue;
+    if (r.keep) keepResearch[id] = lv;
+    else if (r.kind === 'level' && lv >= 2) keepResearch[id] = Math.floor(lv / 2);
+  }
   const n = s.relocations + 1;
   const gain = B.relocateGain(s);
   const next: GameState = {
@@ -171,7 +201,7 @@ export function relocate(s: GameState, now: number): Result {
     staff: s.staff.map(x => ({ ...x, task: null })),
     catalog: s.catalog, ownerReturns: s.ownerReturns, letters: s.letters,
     mysterySeen: s.mysterySeen, totals: s.totals, settings: s.settings,
-    research: { active: null, next: null, levels: keepResearch },
+    research: { active: null, queue: [], levels: keepResearch },
     nextId: Math.max(s.nextId, fresh.nextId) + 1,
     firstTrip: false
   };
@@ -210,10 +240,16 @@ export function canClose(s: GameState): boolean {
   const canShip = p.ready > 0 && p.idle > 0;
   return p.unknown === 0 && p.gateCollectable === 0 && p.repairable === 0 && !canShip;
 }
+/** 破損品が待っているのに素材が足りない世界 */
+export function materialShort(s: GameState): string[] {
+  const ws = new Set(s.items.filter(i => i.stage === 'damaged').map(i => i.world));
+  return [...ws].filter(w => (s.materials[w] ?? 0) < B.repairMaterials(s, w));
+}
 /** 配達が追いついていないか（返却待ちが、配達員全員で一度に運べる量の2倍を超える） */
 export function courierShort(s: GameState): boolean {
+  if (s.totals.trips < 3 && s.relocations === 0) return false; // 研修便のあいだは出さない
   const cap = s.staff.filter(x => x.role === 'courier').reduce((a, x) => a + B.courierCap(s, x), 0);
-  const waiting = s.items.filter(i => i.stage === 'ready' || i.stage === 'damaged' || i.stage === 'qRepair' || i.stage === 'repairing').length;
+  const waiting = s.items.filter(i => i.stage === 'ready').length;
   return waiting > cap * 2;
 }
 
@@ -244,8 +280,9 @@ export function recommendedOpen(s: GameState, now: number): number {
   if (s.items.some(i => i.stage === 'ready') && trips.length) t = Math.min(t, trips[0]);
   // 手の空いた配達員がいて、鑑定・修理が終われば荷ができるなら、その時刻
   const idle = s.staff.some(x => x.role === 'courier' && !x.task);
-  const work = s.staff.filter(x => x.task && x.task.kind !== 'trip').map(x => x.task!.end);
-  if (idle && work.length) t = Math.min(t, Math.max(...work));
+  // 鑑定・修理の待ちが全部終わる時刻（その後に配達を出せる）。10分以内なら勧めない
+  const done = timers(s).filter(r => r.label.startsWith('鑑定') || r.label.startsWith('修理')).map(r => r.at);
+  if (idle && done.length) { const d = Math.max(...done); if (d - now > 10 * B.MIN) t = Math.min(t, d); }
   // 倉庫が溢れる前には戻る
   const room = B.storageCap(s) - storageUsed(s);
   const fullAt = s.gate.next + Math.max(0, Math.ceil(room / B.perDelivery(s)) - 1) * B.GATE_INTERVAL;
@@ -262,7 +299,7 @@ export function advice(s: GameState, now: number, limit = 3): Advice[] {
   if (p.gateCollectable) a.push({ text: `ゲート前の${p.gateCollectable}件を回収する`, sub: '回収', tab: 'storage', anchor: 'gate', pri: 100 });
   if (p.unknown) a.push({ text: `未鑑定の${p.unknown}件を鑑定する`, sub: '処理', tab: 'storage', anchor: 'unknown', pri: 90 });
   if (p.repairable) a.push({ text: `破損品${p.repairable}件を工房へ回す`, sub: '処理', tab: 'storage', anchor: 'damaged', pri: 80 });
-  if (p.ready && p.idle) a.push({ text: `返却待ち${p.ready}件を配達に出す`, sub: '仕込み', tab: 'storage', anchor: 'ready', pri: 85 });
+  if (p.ready && p.idle) a.push({ text: `返却待ち${p.ready}件を配達に出す`, sub: '配達', tab: 'storage', anchor: 'ready', pri: 85 });
   // 物語（手紙と記録）はまとめて一枠
   const unread = s.letters.filter(l => !l.read).length;
   const newPage = s.mysterySeen < mysteryCount(s);
@@ -270,12 +307,19 @@ export function advice(s: GameState, now: number, limit = 3): Advice[] {
     text: unread && newPage ? `手紙${unread}通と、落とし主の記録の新しい頁` : unread ? `持ち主からの手紙が${unread}通届いている` : '落とし主の記録に新しい頁がある',
     sub: '物語', tab: 'catalog', anchor: unread ? 'letters' : 'mystery', pri: 52
   });
-  if (courierShort(s)) a.push({ text: '配達が追いつかない：配達員を雇うかLvを上げる', sub: '職員', tab: 'staff', anchor: 'hire-courier', pri: 88 });
-  if (!s.research.active || !s.research.next) {
-    const cand = researchList(s).filter(r => B.researchCost(s, r.id) <= s.credit);
-    if (cand.length) a.push({ text: s.research.active ? `次の研究を予約できる（${cand.length}件）` : `研究に着手できる（${cand.length}件）`, sub: '仕込み', tab: 'map', anchor: 'research', pri: s.research.active ? 45 : 60 });
+  const ms = materialShort(s);
+  if (ms.length) a.push({ text: `${ms.map(w => WORLD[w].material).join('・')}が足りない：その世界の品を返すか、素材の研究を`, sub: '素材', tab: 'storage', anchor: 'damaged', pri: 78 });
+  if (courierShort(s)) {
+    // 自動の配達（定期便）がまだなら、そちらを先に勧める
+    const auto = B.rlv(s, 'auto_dispatch') > 0;
+    if (!auto && researchAvailable(s, 'auto_dispatch')) a.push({ text: '配達が追いつかない：「定期便の運行」を研究すると、留守中も配達員が出発する', sub: '研究', tab: 'map', anchor: 'research', pri: 80 });
+    else a.push({ text: '配達が追いつかない：配達員を雇うかLvを上げる', sub: '職員', tab: 'staff', anchor: 'hire-courier', pri: 80 });
   }
-  const fac = (['gate', 'storage', 'workshop', 'appraisal'] as FacilityId[]).filter(f => s.facilities[f] < B.FACILITY[f].max && B.facilityCost(f, s.facilities[f]) <= s.fee);
+  if (!s.research.active || s.research.queue.length < RESEARCH_QUEUE) {
+    const cand = researchList(s).filter(r => B.researchCost(s, r.id) <= s.credit);
+    if (cand.length) a.push({ text: s.research.active ? `次の研究を予約できる（${cand.length}件）` : `研究に着手できる（${cand.length}件）`, sub: '研究', tab: 'map', anchor: 'research', pri: s.research.active ? 45 : 60 });
+  }
+  const fac = (['gate', 'storage', 'workshop', 'appraisal'] as FacilityId[]).filter(f => s.facilities[f] < B.facilityMax(s, f) && B.facilityCost(f, s.facilities[f]) <= s.fee);
   const hires = (['appraiser', 'repairer', 'courier'] as Role[]).filter(r => s.staff.filter(x => x.role === r).length < B.maxStaff(s, r) && B.hireCost(s, r) <= s.fee);
   const hireRole = hires.includes('courier') ? 'courier' : hires[hires.length - 1];
   if (hireRole) a.push({ text: `${ROLES[hireRole].name}を新しく雇える`, sub: '職員', tab: 'staff', anchor: `hire-${hireRole}`, pri: 55 });

@@ -4,8 +4,8 @@ export interface WorldDef {
   travelHours: number; value: number; desc: string; x: number; y: number;
 }
 export interface ItemDef { id: string; world: string; name: string; desc: string; clues: string[]; generic?: boolean }
-export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; items?: string[]; generic?: boolean }
-export interface MysteryReq { letters?: number; relocations?: number; worlds?: number; catalog?: number }
+export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; items?: string[]; letterItems?: (string | null)[]; generic?: boolean }
+export interface MysteryReq { letters?: number; relocations?: number; worlds?: number; catalog?: number; progress?: number; lettersOf?: string[] }
 export interface MysteryDef { id: number; title: string; req: MysteryReq; text: string | null }
 export interface ResearchReq { returns?: number; research?: string }
 export interface ResearchDef {
@@ -82,7 +82,7 @@ export interface GameState {
   candidates: Record<Role, Candidate[]>;
   items: ItemInst[];
   gate: { next: number; deliveries: number };
-  research: { active: { id: string; start: number; end: number } | null; next: string | null; levels: Record<string, number> };
+  research: { active: { id: string; start: number; end: number } | null; queue: string[]; levels: Record<string, number> };
   catalog: Record<string, { n: number; best: Rarity; r?: number; o?: string[] }>;
   ownerReturns: Record<string, number>;
   letters: Letter[];
@@ -90,6 +90,7 @@ export interface GameState {
   mysterySeen: number;
   relocations: number;
   perm: number;          // 移転で積み上がった永続倍率の加算分
+  journal?: number;      // 読んだ業務日誌の余白の行数
   firstTrip: boolean;
   totals: { returned: number; appraised: number; correct: number; fee: number; credit: number; trips: number };
   session: SessionStats;

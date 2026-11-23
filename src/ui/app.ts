@@ -13,7 +13,7 @@ import { renderStaff } from './screens/staff';
 import { renderMap } from './screens/map';
 import { renderCatalog } from './screens/catalog';
 import { showReport, showClosed, showIntro, showSettings, showLetter } from './modals';
-import { OWNER, MYSTERY } from '../core/data';
+import { OWNER, MYSTERY, JOURNAL } from '../core/data';
 import { slide } from './components';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -96,10 +96,11 @@ export class App {
     if (anchor && tab === 'catalog' && (anchor === 'letters' || anchor === 'mystery')) this.sub.catalog = anchor;
     this.render(changed);
     if (changed) this.main.scrollTo({ top: 0, behavior: 'auto' });
-    if (anchor) requestAnimationFrame(() => {
-      const el = this.main.querySelector(`#a-${anchor}`);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    // 描画が確定してから移動する（品物が多くても別の段に着地しないように）
+    if (anchor) requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = this.main.querySelector<HTMLElement>(`#a-${anchor}`);
+      if (el) this.main.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top - this.main.getBoundingClientRect().top + this.main.scrollTop - 44), behavior: 'auto' });
+    }));
   }
 
   // ---------- 描画 ----------
@@ -203,7 +204,8 @@ export class App {
     const r = newReport(now);
     advance(this.s, now, r);
     this.announce(r);
-    for (const p of this.newPages()) this.toast(`落とし主の記録に、第${p.id}頁「${p.title}」が綴じ込まれました`, 'good', () => this.go('catalog', 'mystery'));
+    // 手紙などを開いている間は記録の知らせを待たせ、閉じてから出す
+    if (this.modalOpen === 0) for (const p of this.newPages()) this.toast(`落とし主の記録に、第${p.id}頁「${p.title}」が綴じ込まれました`, 'good', () => this.go('catalog', 'mystery'));
     if (this.signature() !== this.sig) {
       if (this.modalOpen === 0) this.render();
       else { this.renderHeader(); this.renderTabs(); }
@@ -221,7 +223,7 @@ export class App {
       this.toast(r.letterList.length > 1 ? `${name}ほかから手紙が${r.letterList.length}通届きました` : `${name}から手紙が届きました`, 'good', () => showLetter(this, first.owner, first.idx));
     }
     if (r.arrivals) this.toast(`ゲートに落とし物が${r.arrivals}件届きました`);
-    for (const n of r.research) this.toast(`研究「${n}」が完了しました`, 'good');
+    for (const n of [...new Set(r.research)]) this.toast(`研究「${n}」が完了しました`, 'good');
   }
 
   updateTimers() {
@@ -266,9 +268,16 @@ export class App {
   reopen(now: number, onLoad: boolean) {
     const r = catchUp(this.s, now);
     const pages = this.newPages();
-    startSession(this.s, now);
+    // すぐ開き直しただけなら（再読み込みなど）、今回の集計を引き継ぐ
+    if (!onLoad || now - r.from > SESSION_GAP) startSession(this.s, now);
     this.render();
-    if (!onLoad || now - r.from > SESSION_GAP) showReport(this, r, pages);
+    if (!onLoad || now - r.from > SESSION_GAP) {
+      // 2時間以上あけて開いたら、業務日誌の余白を一行
+      let note: string | undefined;
+      const n = this.s.journal ?? 0;
+      if (now - r.from >= 2 * 3_600_000 && n < JOURNAL.length) { note = JOURNAL[n]; this.s.journal = n + 1; this.s.log.unshift({ at: now, text: `（余白）${note}` }); }
+      showReport(this, r, pages, note);
+    }
   }
 
   /** 新しく開いた「落とし主の記録」の頁 */
@@ -304,7 +313,11 @@ export class App {
     // モーダルを開いているときは上に出す（ボタンを隠さないように）
     this.toasts.classList.toggle('top', this.modalOpen > 0 || !!document.querySelector('.closed'));
     this.toasts.append(el);
-    while (this.toasts.children.length > 2) this.toasts.firstElementChild?.remove();
+    // 2枚を超えたら、押せない知らせから先に消す（手紙や記録の知らせを残す）
+    while (this.toasts.children.length > 2) {
+      const plain = [...this.toasts.children].find(c => !c.classList.contains('tap') && c !== el);
+      (plain ?? this.toasts.firstElementChild)?.remove();
+    }
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, onClick ? 4200 : 2600);
   }
 

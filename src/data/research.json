@@ -6,7 +6,7 @@
   {"id": "auto_assign", "name": "常時委任の規程", "desc": "回収した品物を、鑑定士へ自動で回す（珍品と依頼品は手元に残る）。任せた品には的中の上乗せが付かない。設定で止められる。", "kind": "flag", "max": 1, "cost": 300, "growth": 1, "hours": 0.25, "req": {"returns": 10}, "keep": true},
   {"id": "auto_repair", "name": "工房の段取り表", "desc": "素材がそろっている破損品を、修理工へ自動で回す。", "kind": "flag", "max": 1, "cost": 1500, "growth": 1, "hours": 1, "req": {"research": "auto_assign"}, "keep": true},
   {"id": "auto_collect", "name": "夜間受取の許可", "desc": "ゲートに届いた品物を、倉庫に空きがある限り自動で回収する。", "kind": "flag", "max": 1, "cost": 4000, "growth": 1, "hours": 2, "req": {"research": "auto_repair"}, "keep": true},
-  {"id": "auto_dispatch", "name": "定期便の運行", "desc": "手の空いた配達員が、返却待ちのいちばん多い世界へ自動で出発する（3件以上たまったとき）。", "kind": "flag", "max": 1, "cost": 3000, "growth": 1, "hours": 2, "req": {"research": "auto_collect"}, "keep": true},
+  {"id": "auto_dispatch", "name": "定期便の運行", "desc": "手の空いた配達員が、返却待ちのいちばん多い世界へ自動で出発する（3件以上たまったとき）。", "kind": "flag", "max": 1, "cost": 1500, "growth": 1, "hours": 1, "req": {"returns": 15}, "keep": true},
   {"id": "fee_rate", "name": "礼金規定の改定", "desc": "返却時の礼金 +20%（段階ごと）。", "kind": "level", "stat": "fee", "per": 0.2, "max": 25, "cost": 200, "growth": 1.55, "hours": 0.2, "hoursGrowth": 1.25, "req": {"returns": 1}},
   {"id": "credit_rate", "name": "返却証明の様式", "desc": "返却時の信用 +20%（段階ごと）。", "kind": "level", "stat": "credit", "per": 0.2, "max": 25, "cost": 300, "growth": 1.55, "hours": 0.25, "hoursGrowth": 1.25, "req": {"returns": 5}},
   {"id": "appraise_speed", "name": "鑑定手順の見直し", "desc": "鑑定の速さ +15%（段階ごと）。", "kind": "level", "stat": "appraise", "per": 0.15, "max": 15, "cost": 250, "growth": 1.6, "hours": 0.2, "hoursGrowth": 1.3, "req": {"returns": 3}},

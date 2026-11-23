@@ -93,4 +93,4 @@ export function slide(app: App, key: string, idx: number, el: HTMLElement): HTML
 }
 
 /** 持ち主の表示名（まだ誰とも決まっていない品は「〜の誰か」） */
-export const ownerName = (owner: string, world: string) => OWNER[owner]?.name ?? `${WORLD[world].short}の誰か`;
+export const ownerName = (owner: string, _world?: string) => OWNER[owner]?.name ?? '持ち主不明（掲示中）';

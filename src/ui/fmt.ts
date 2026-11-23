@@ -1,15 +1,20 @@
-import { HOUR, MIN } from '../core/balance';
+import { MIN } from '../core/balance';
 
+/** 数字は日本の単位で（9,999 / 98.5万 / 1.23億 / 4.56兆 / 7.89京） */
 export function num(n: number): string {
   const a = Math.abs(n);
   if (a < 10_000) return Math.floor(n).toLocaleString('en-US');
-  if (a >= 1e15) { const e = Math.floor(Math.log10(a)); return `${(n / Math.pow(10, e)).toFixed(2)}e${e}`; }
-  const units = [['T', 1e12], ['B', 1e9], ['M', 1e6], ['K', 1e3]] as const;
-  for (let i = units.length - 1; i >= 0; i--) {
-    const [u, v] = units[i];
+  if (a >= 1e20) { const e = Math.floor(Math.log10(a)); return `${(n / Math.pow(10, e)).toFixed(2)}e${e}`; }
+  const units = [['京', 1e16], ['兆', 1e12], ['億', 1e8], ['万', 1e4]] as const;
+  for (const [u, v] of units) {
     const x = a / v;
-    if (x >= 999.5 && i > 0) continue; // 1000K ではなく 1.00M と書く
-    if (x >= 1) return (n / v).toFixed(x >= 100 ? 0 : x >= 10 ? 1 : 2) + u;
+    // 丸めて10000になるなら一つ上の単位（10000万 ではなく 1.00億）
+    if (x >= 0.99995) {
+      const sign = n < 0 ? '-' : '';
+      if (x >= 999.5) return sign + Math.round(x).toLocaleString('en-US') + u;
+      const d = x >= 99.95 ? 0 : x >= 9.995 ? 1 : 2;
+      return sign + Math.max(1, x).toFixed(d) + u;
+    }
   }
   return String(Math.floor(n));
 }
@@ -24,10 +29,13 @@ export function dur(ms: number): string {
 }
 /** 短い所要時間（例：2.5時間 / 12分） */
 export function span(ms: number): string {
-  if (ms >= 48 * HOUR) return `${Math.round(ms / (24 * HOUR))}日`;
-  if (ms >= 24 * HOUR) { const h = Math.round(ms / HOUR); return h % 24 ? `1日${h - 24}時間` : '1日'; }
-  if (ms >= HOUR) { const h = ms / HOUR; return `${h >= 10 ? Math.round(h) : Math.round(h * 10) / 10}時間`; }
-  return `${Math.max(1, Math.round(ms / MIN))}分`;
+  const mins = Math.round(ms / MIN);
+  if (mins < 60) return `${Math.max(1, mins)}分`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  const hr = Math.round(mins / 60);
+  if (hr >= 48) return `${Math.round(hr / 24)}日`;
+  if (hr >= 24) return hr === 24 ? '1日' : `1日${hr - 24}時間`;
+  return m ? `${h}時間${m}分` : `${h}時間`;
 }
 export function clock(t: number, now = Date.now()): string {
   const d = new Date(t);
