@@ -19,7 +19,7 @@ export function renderMap(app: App): HTMLElement {
   const isOpen = (id: string) => id === 'center' || open.has(id);
 
   const H = Y(790);
-  const m = svg('svg', { class: 'map', viewBox: `0 0 360 ${H}`, role: 'img', 'aria-label': '世界の地図' });
+  const m = svg('svg', { class: 'map', viewBox: `0 0 360 ${H}`, role: 'group', 'aria-label': '世界の地図' });
   // 線
   for (const [a, b] of MAP.links) {
     const p = pos(a), q = pos(b);
@@ -44,14 +44,14 @@ export function renderMap(app: App): HTMLElement {
         svg('circle', { class: 'base', r: 20, fill: w.color, stroke: '#FBF9F4', 'stroke-width': 3, style: 'filter: drop-shadow(0 3px 3px rgba(30,42,40,.35))' }),
         svg('circle', { r: 6, fill: '#FBF9F4', opacity: .9 }),
         svg('text', { y: 36, 'text-anchor': 'middle' }, w.short));
-      g.addEventListener('click', () => showWorld(app, w.id));
+      onActivate(g, () => showWorld(app, w.id));
     } else {
       g.append(
         svg('circle', { r: 32, fill: 'transparent' }),
         svg('circle', { class: 'base', r: 18, fill: '#F3EFE6', stroke: '#7D8683', 'stroke-width': 1.5, 'stroke-dasharray': '4 4' }),
         svg('text', { class: 'q', y: 6, 'text-anchor': 'middle' }, '?'),
-        svg('text', { y: 34, 'text-anchor': 'middle', style: 'fill: #7D8683; font-weight: 400; font-size: 10px' }, '未開通'));
-      g.addEventListener('click', () => app.toast('まだゲートの線が届いていません。研究か移転で開通します。'));
+        svg('text', { y: 34, 'text-anchor': 'middle', style: 'fill: #5F6966; font-weight: 400; font-size: 11px' }, '未開通'));
+      onActivate(g, () => app.toast('まだゲートの線が届いていません。研究か移転で開通します。'));
     }
     m.append(g);
   }
@@ -74,7 +74,7 @@ export function renderMap(app: App): HTMLElement {
   const rush = act ? A.rushCost(s) : 0;
   root.append(section('研究', act ? `進行中・予約 ${queue.length}/${A.RESEARCH_QUEUE}` : `${list.length}件 着手可能`, h('div', { id: 'a-research' },
     act ? h('div', { class: 'card research active' },
-      h('div', { class: 'row' }, icon(I.flask, 20), h('b', { class: 'grow' }, RESEARCH_BY_ID[act.id].name), countdown(act.end)),
+      h('div', { class: 'row' }, icon(I.flask, 20), h('b', { class: 'grow' }, RESEARCH_BY_ID[act.id].name, RESEARCH_BY_ID[act.id].max > 1 ? `　Lv${B.rlv(s, act.id) + 1}` : ''), countdown(act.end)),
       h('div', { class: 'mt8' }, pbar(act.start, act.end)),
       h('div', { class: 'row mt8' }, h('span', { class: 'card-s grow' }, '余った信用で、今すぐ終える'),
         h('button', { class: 'btn btn-ghost btn-sm', disabled: s.credit < rush, onclick: () => app.act(A.rushResearch) }, '早める', h('span', { class: 'cost' }, `信用 ${num(rush)}`))),
@@ -109,7 +109,7 @@ export function renderMap(app: App): HTMLElement {
       h('div', { class: 'cap mt12' }, h('div', { class: 'pbar lg' }, h('i', { style: { width: `${p * 100}%` } })), h('span', { class: 'num' }, `${num(s.branchCredit)}/${num(need)}`)),
       h('p', { class: 'note' }, A.canRelocate(s) ? `移転できます。移転すると、礼金と信用にずっと掛かる倍率が ×${(1 + s.perm).toFixed(2)} から ×${(1 + s.perm + B.relocateGain(s)).toFixed(2)} になります（目標を超えて貯めるほど少し増えます）。` : 'この期に受け取った信用の合計が目標に届いたら、移転できます。'),
       h('div', { class: 'keep-grid' },
-        h('div', null, h('b', null, '移転しても残るもの'), h('p', null, '職員とそのLv、図鑑、手紙、落とし主の記録、開通した世界、自動化の規程、段階式の研究の半分')),
+        h('div', null, h('b', null, '残るもの'), h('p', null, '職員とそのLv、図鑑、手紙、落とし主の記録、開通した世界、自動化の規程、段階式の研究の半分')),
         h('div', null, h('b', null, 'なくなるもの'), h('p', null, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）'))),
       h('button', { class: ['btn', 'btn-block', A.canRelocate(s) ? 'btn-red' : 'btn-ghost'], disabled: !A.canRelocate(s), onclick: () => showRelocate(app) }, A.canRelocate(s) ? '移転の手続きへ' : `あと 信用 ${num(Math.max(0, need - s.branchCredit))}`))));
   }
@@ -124,4 +124,10 @@ export function renderMap(app: App): HTMLElement {
 function effectNow(stat: string, v: number): string {
   const pct = `+${Math.round(v * 100)}%`;
   return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}` } as Record<string, string>)[stat] ?? pct;
+}
+
+/** タップでも Enter / Space でも同じ動作 */
+function onActivate(el: Element, fn: () => void) {
+  el.addEventListener('click', fn);
+  el.addEventListener('keydown', e => { const k = (e as KeyboardEvent).key; if (k === 'Enter' || k === ' ') { e.preventDefault(); fn(); } });
 }

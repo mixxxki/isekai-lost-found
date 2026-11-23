@@ -809,7 +809,18 @@ button { font: inherit; color: inherit; }
 .sheet .grab { touch-action: none; width: 120px; height: 32px; margin: -8px auto 4px; padding: 13px 38px 14px; background-clip: content-box; cursor: grab; }
 .sheet .sheet-h { touch-action: pan-x; }
 .big-tag.open .desc { display: block; -webkit-line-clamp: unset; }
+/* フォーカス：タップでは枠を出さず、キーボードのときだけ見える枠 */
+.map .node:focus { outline: none; }
+.map .node:focus-visible .base { stroke: var(--green); stroke-width: 4; }
+.receipt .ln > span { white-space: nowrap; }
+.board-empty { color: var(--ink-2); }
+.seg button { color: var(--ink-2); }
+.btn-red { color: #fff; }
+.tag .chip.outline[style*="--red"], .tag .chip.hit { color: var(--red-d) !important; }
+.reduce-motion .main { scroll-behavior: auto; }
+@media (prefers-reduced-motion: reduce) { .main { scroll-behavior: auto; } }
 @media (max-height: 700px) {
+  .sheet > .btn-row:last-child { position: sticky; bottom: calc((22px + var(--sab)) * -1); background: var(--paper); padding: 10px 0 calc(22px + var(--sab)); margin-bottom: calc((22px + var(--sab)) * -1); box-shadow: 0 -12px 12px -6px var(--paper); }
   .big-tag { min-height: 0; margin-top: 18px; }
   .big-tag .desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .clue { padding: 7px 10px; }

@@ -2,9 +2,10 @@ import { MIN } from '../core/balance';
 
 /** 数字は日本の単位で（9,999 / 98.5万 / 1.23億 / 4.56兆 / 7.89京） */
 export function num(n: number): string {
+  if (!isFinite(n)) return '―';
   const a = Math.abs(n);
   if (a < 10_000) return Math.floor(n).toLocaleString('en-US');
-  if (a >= 1e20) { const e = Math.floor(Math.log10(a)); return `${(n / Math.pow(10, e)).toFixed(2)}e${e}`; }
+  if (a >= 9.9995e19) { const e = Math.floor(Math.log10(a)); return `${(n / Math.pow(10, e)).toFixed(2)}e${e}`; }
   const units = [['京', 1e16], ['兆', 1e12], ['億', 1e8], ['万', 1e4]] as const;
   for (const [u, v] of units) {
     const x = a / v;
@@ -23,6 +24,7 @@ export function dur(ms: number): string {
   if (ms <= 0) return 'まもなく';
   const s = Math.ceil(ms / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h >= 24) return `${Math.floor(h / 24)}日${h % 24}時間`;
   if (h > 0) return `${h}時間${String(m).padStart(2, '0')}分`;
   if (m > 0) return `${m}分${String(sec).padStart(2, '0')}秒`;
   return `${sec}秒`;

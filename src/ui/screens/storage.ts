@@ -62,7 +62,9 @@ export function renderStorage(app: App): HTMLElement {
         dmg.length ? h('div', null,
           h('div', { class: 'dispatch' }, '素材：', ...[...new Set(dmg.map(i => i.world))].map(w =>
             h('span', { class: 'row', style: { gap: '4px' } }, worldDot(w), `${WORLD[w].material} ${Math.floor(s.materials[w] ?? 0)}（1件に${B.repairMaterials(s, w)}）`))),
-          h('button', { class: 'btn btn-primary btn-block', style: { marginBottom: '14px' }, onclick: () => app.act(A.repairAll) }, icon(I.wrench, 20), '工房へ回す')) : null,
+          A.pendingWork(s).repairable > 0
+            ? h('button', { class: 'btn btn-primary btn-block', style: { marginBottom: '14px' }, onclick: () => app.act(A.repairAll) }, icon(I.wrench, 20), '工房へ回す')
+            : h('p', { style: { color: 'var(--red-d)', fontSize: '13px', fontWeight: 700, margin: '0 0 14px' } }, `素材が足りません：${A.materialShort(s).map(w => `${WORLD[w].material}は${WORLD[w].short}の品を返すと手に入ります`).join('。')}`)) : null,
         tagList(app, 'dmg', [...dmg, ...rep], it => showItem(app, it.id)))));
   }
 

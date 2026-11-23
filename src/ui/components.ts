@@ -40,7 +40,7 @@ export function tagCard(app: App, it: ItemInst, onclick?: () => void): HTMLEleme
   const el = h('button', {
     class: ['tag', !known && 'unknown', it.rarity === 1 && 'rar-1', it.rarity === 2 && 'rar-2', app.fresh('i' + it.id) && 'enter', task && 'busy'],
     style: { '--rot': tilt(it.id), ...(known ? { '--wc': w.color } : {}) },
-    'aria-label': `${def.name}（${STAGE_LABEL[it.stage]}）`,
+    'aria-label': [`No.${pad(it.id)} ${def.name}`, known ? w.short : '出どころ不明', STAGE_LABEL[it.stage], it.rarity ? RARITY_NAME[it.rarity] : '', isRequested(app.s, it) ? '依頼品' : '', it.verdict === 'correct' ? '的中' : '', task ? '作業中' : ''].filter(Boolean).join('、'),
     onclick
   },
     stringSvg(),
@@ -53,7 +53,7 @@ export function tagCard(app: App, it: ItemInst, onclick?: () => void): HTMLEleme
       it.rarity ? h('span', { class: 'chip red' }, RARITY_NAME[it.rarity]) : null,
       known && it.damaged && !it.repaired && it.stage !== 'damaged' ? h('span', { class: 'chip outline' }, '要修理') : null,
       isRequested(app.s, it) ? h('span', { class: 'chip green' }, '依頼品') : null,
-      it.verdict === 'correct' ? h('span', { class: 'chip outline', style: { color: 'var(--red)' } }, '的中') : null
+      it.verdict === 'correct' ? h('span', { class: 'chip outline hit' }, '的中') : null
     ),
     task ? h('div', { class: 'mt8' }, pbar(task.start, task.end, 'pb-tag')) : null
   );

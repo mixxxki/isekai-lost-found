@@ -201,7 +201,8 @@ export function relocate(s: GameState, now: number): Result {
     staff: s.staff.map(x => ({ ...x, task: null })),
     catalog: s.catalog, ownerReturns: s.ownerReturns, letters: s.letters,
     mysterySeen: s.mysterySeen, totals: s.totals, settings: s.settings,
-    research: { active: null, queue: [], levels: keepResearch },
+    // 自動化など「残る」研究が進行中なら、残り時間ごと引き継ぐ
+    research: { active: s.research.active && RESEARCH_BY_ID[s.research.active.id]?.keep ? { ...s.research.active } : null, queue: [], levels: keepResearch },
     nextId: Math.max(s.nextId, fresh.nextId) + 1,
     firstTrip: false
   };
@@ -308,7 +309,7 @@ export function advice(s: GameState, now: number, limit = 3): Advice[] {
     sub: '物語', tab: 'catalog', anchor: unread ? 'letters' : 'mystery', pri: 52
   });
   const ms = materialShort(s);
-  if (ms.length) a.push({ text: `${ms.map(w => WORLD[w].material).join('・')}が足りない：その世界の品を返すか、素材の研究を`, sub: '素材', tab: 'storage', anchor: 'damaged', pri: 78 });
+  if (ms.length) a.push({ text: `${ms.map(w => `${WORLD[w].material}（${WORLD[w].short}）`).join('・')}が足りない：${ms.map(w => WORLD[w].short).join('・')}の品を返すと手に入る`, sub: '素材', tab: 'storage', anchor: 'ready', pri: 78 });
   if (courierShort(s)) {
     // 自動の配達（定期便）がまだなら、そちらを先に勧める
     const auto = B.rlv(s, 'auto_dispatch') > 0;

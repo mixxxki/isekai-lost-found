@@ -74,7 +74,9 @@ export class App {
     this.main = h('main', { class: 'main', id: 'main' });
     this.tabbar = h('nav', { class: 'tabbar', 'aria-label': 'メインメニュー' });
     this.toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
-    this.root.append(this.header, this.main, this.tabbar, this.toasts);
+    this.root.append(this.header, this.main, this.tabbar);
+    // トーストはモーダル中（背面が操作不可のとき）でも押せるよう、#app の外に置く
+    document.body.append(this.toasts);
   }
 
   tabUnlocked(t: Tab): { ok: boolean; why: string } {
@@ -178,7 +180,7 @@ export class App {
       const u = this.tabUnlocked(t.id);
       return h('button', {
         class: ['tab', t.id === this.tab && 'on', !u.ok && 'locked'],
-        'aria-label': t.label, 'aria-current': t.id === this.tab ? 'page' : null,
+        'aria-label': u.ok ? t.label : `${t.label}（${u.why}）`, 'aria-current': t.id === this.tab ? 'page' : null, 'aria-disabled': u.ok ? null : 'true',
         onclick: () => this.go(t.id)
       }, icon(u.ok ? t.icon : I.lock), t.label, dots[t.id] && u.ok && t.id !== this.tab ? h('span', { class: 'dot' }) : null);
     }));
@@ -307,10 +309,13 @@ export class App {
   }
 
   toast(msg: string, kind?: 'ng' | 'good', onClick?: () => void) {
-    const el = h('div', { class: ['toast', kind, onClick && 'tap'], role: onClick ? 'button' : null }, msg);
-    if (onClick) el.addEventListener('click', () => { el.remove(); onClick(); });
+    const el = h('div', { class: ['toast', kind, onClick && 'tap'], role: onClick ? 'button' : null, tabindex: onClick ? 0 : null }, msg);
+    if (onClick) {
+      el.addEventListener('click', () => { el.remove(); onClick(); });
+      el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.remove(); onClick(); } });
+    }
     // モーダルを開いているときは上に出す（ボタンを隠さないように）
-    this.toasts.classList.toggle('top', this.modalOpen > 0 || !!document.querySelector('.closed'));
+    this.toasts.classList.toggle('top', this.modalOpen > 0 || !!document.querySelector('.closed[role=dialog]'));
     this.toasts.append(el);
     // 2枚を超えたら、押せない知らせから先に消す（手紙や記録の知らせを残す）
     while (this.toasts.children.length > 2) {
