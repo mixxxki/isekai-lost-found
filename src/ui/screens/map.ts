@@ -2,7 +2,7 @@
 import type { App } from '../app';
 import * as A from '../../core/actions';
 import * as B from '../../core/balance';
-import { WORLDS, WORLD, MAP, RESEARCH_BY_ID, RELOCATIONS } from '../../core/data';
+import { WORLDS, WORLD, MAP, RESEARCH_BY_ID, RELOCATIONS, RESEARCH } from '../../core/data';
 import { h, svg, icon } from '../dom';
 import { I } from '../icons';
 import { num, span } from '../fmt';
@@ -71,7 +71,7 @@ export function renderMap(app: App): HTMLElement {
   const list = A.researchList(s);
   const queue = s.research.queue;
   const nx = queue.length >= A.RESEARCH_QUEUE;
-  const rush = act ? A.rushCost(s) : 0;
+  const rush = act ? A.rushCost(s, Date.now()) : 0;
   root.append(section('研究', act ? `進行中・予約 ${queue.length}/${A.RESEARCH_QUEUE}` : `${list.length}件 着手可能`, h('div', { id: 'a-research' },
     act ? h('div', { class: 'card research active' },
       h('div', { class: 'row' }, icon(I.flask, 20), h('b', { class: 'grow' }, RESEARCH_BY_ID[act.id].name, RESEARCH_BY_ID[act.id].max > 1 ? `　Lv${B.rlv(s, act.id) + 1}` : ''), countdown(act.end)),
@@ -96,7 +96,7 @@ export function renderMap(app: App): HTMLElement {
           h('span', { class: 'card-s grow' }, `所要 ${span(A.researchTimeFor(s, r.id))}`),
           h('button', { class: 'btn btn-primary btn-sm', disabled: (!!act && !!nx) || reserved || s.credit < cost, onclick: () => app.act((st, now) => A.startResearch(st, r.id, now)) }, act ? '予約' : '着手', h('span', { class: 'cost' }, `信用 ${num(cost)}`))));
     }),
-    !list.length && !act ? h('div', { class: 'empty' }, '今は着手できる研究がありません。返却を重ねると増えていきます。') : null)));
+    !list.length && !act ? h('div', { class: 'empty' }, A.researchList(s).length === 0 && RESEARCH.every(r => !A.researchAvailable(s, r.id) && (B.rlv(s, r.id) >= B.researchMax(s, r.id) || r.kind === 'world')) ? 'すべての研究を修めました。終点の先へ移転すると、上限が広がります。' : '今は着手できる研究がありません。返却を重ねると増えていきます。') : null)));
 
   // 移転
   const next = RELOCATIONS[s.relocations];
@@ -110,7 +110,7 @@ export function renderMap(app: App): HTMLElement {
       h('p', { class: 'note' }, A.canRelocate(s) ? `移転できます。移転すると、礼金と信用にずっと掛かる倍率が ×${(1 + s.perm).toFixed(2)} から ×${(1 + s.perm + B.relocateGain(s)).toFixed(2)} になります（目標を超えて貯めるほど少し増えます）。` : 'この期に受け取った信用の合計が目標に届いたら、移転できます。'),
       h('div', { class: 'keep-grid' },
         h('div', null, h('b', null, '残るもの'), h('p', null, '職員とそのLv、図鑑、手紙、落とし主の記録、開通した世界、自動化の規程、段階式の研究の半分')),
-        h('div', null, h('b', null, 'なくなるもの'), h('p', null, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）'))),
+        h('div', null, h('b', null, 'なくなるもの'), h('p', null, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）、進行中・予約中の研究（自動化の規程は残り時間ごと残る）'))),
       h('button', { class: ['btn', 'btn-block', A.canRelocate(s) ? 'btn-red' : 'btn-ghost'], disabled: !A.canRelocate(s), onclick: () => showRelocate(app) }, A.canRelocate(s) ? '移転の手続きへ' : `あと 信用 ${num(Math.max(0, need - s.branchCredit))}`))));
   }
   root.append(h('div', { class: 'card' }, h('dl', { class: 'kv' },
@@ -123,7 +123,7 @@ export function renderMap(app: App): HTMLElement {
 
 function effectNow(stat: string, v: number): string {
   const pct = `+${Math.round(v * 100)}%`;
-  return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}` } as Record<string, string>)[stat] ?? pct;
+  return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}`, autofee: `任せた品の礼金 ${pct}`, repairfee: `直した品の礼金 ${pct}`, cap: `持てる数 +${Math.floor(v)}` } as Record<string, string>)[stat] ?? pct;
 }
 
 /** タップでも Enter / Space でも同じ動作 */

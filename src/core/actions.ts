@@ -156,7 +156,7 @@ export function researchAvailable(s: GameState, id: string): boolean {
 export const RESEARCH_QUEUE = 3;
 const pendingLv = (s: GameState, id: string) => B.rlv(s, id) + (s.research.active?.id === id ? 1 : 0) + s.research.queue.filter(q => q === id).length;
 /** 着手・予約にかかる費用（進行中と同じ研究を予約するなら一段上の費用） */
-export const researchCostFor = (s: GameState, id: string) => Math.round(RESEARCH_BY_ID[id].cost * Math.pow(RESEARCH_BY_ID[id].growth, pendingLv(s, id)));
+export const researchCostFor = (s: GameState, id: string) => B.researchCostAt(s, id, pendingLv(s, id));
 export const researchTimeFor = (s: GameState, id: string) => RESEARCH_BY_ID[id].hours * B.HOUR * Math.pow(RESEARCH_BY_ID[id].hoursGrowth ?? 1, pendingLv(s, id));
 /** 一覧に出す研究（進行中のものは、もう一段取れる場合だけ） */
 export const researchList = (s: GameState) => RESEARCH.filter(r => researchAvailable(s, r.id) && pendingLv(s, r.id) < B.researchMax(s, r.id));
@@ -175,17 +175,17 @@ export function startResearch(s: GameState, id: string, now: number): Result {
   return ok(`「${RESEARCH_BY_ID[id].name}」に着手しました`);
 }
 /** 進行中の研究を今すぐ終える費用（残り1時間あたり、その段の費用の半分。最低はその段の費用の1割） */
-export function rushCost(s: GameState): number {
+export function rushCost(s: GameState, now: number): number {
   const a = s.research.active;
   if (!a) return 0;
-  const left = Math.max(0, a.end - Date.now()) / B.HOUR;
-  const base = RESEARCH_BY_ID[a.id].cost * Math.pow(RESEARCH_BY_ID[a.id].growth, B.rlv(s, a.id));
+  const left = Math.max(0, a.end - now) / B.HOUR;
+  const base = B.researchCostAt(s, a.id, B.rlv(s, a.id));
   return Math.round(base * Math.max(0.1, 0.5 * left));
 }
 export function rushResearch(s: GameState, now: number): Result {
   const a = s.research.active;
   if (!a) return ng('進行中の研究がありません');
-  const cost = rushCost(s);
+  const cost = rushCost(s, now);
   if (s.credit < cost) return ng('信用が足りません');
   s.credit -= cost;
   const d = a.end - now;

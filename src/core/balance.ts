@@ -18,7 +18,7 @@ export const REQUEST_LIFE = 24 * HOUR;
 export const REQUEST_MULT = 3;
 export const RELOCATE_BASE = 1_000_000;
 /** 移転に必要な信用（1回目は1M。以降は段階的に上がる） */
-export const relocateAt = (n: number) => n <= 5 ? RELOCATE_BASE * Math.pow(10, n) : RELOCATE_BASE * 1e5 * Math.pow(3, n - 5);
+export const relocateAt = (n: number) => n <= 4 ? RELOCATE_BASE * Math.pow(10, n) : RELOCATE_BASE * 1e5 * Math.pow(1.5, n - 5);
 /** 終点の先へ移転した回数（6回目以降） */
 export const beyond = (s: GameState) => Math.max(0, s.relocations - 6);
 
@@ -83,7 +83,7 @@ export const levelCost = (st: Staff, s: { relocations: number }) => {
   const base = { appraiser: 40, repairer: 50, courier: 60 }[st.role];
   const cheap = trait(st.role, st.trait).cheap ?? 0;
   // 移転するたびに上げ直しが高くなる（引き継いだLvほど価値がある）
-  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap) * Math.pow(2.5, s.relocations));
+  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap) * Math.pow(1.8, s.relocations));
 };
 /** 後の世界の品ほど鑑定に時間がかかる */
 export const appraiseBase = (world: string) => APPRAISE_BASE * (1 + 0.6 * (WORLD_INDEX[world] ?? 0));
@@ -98,7 +98,7 @@ export function repairTime(s: GameState, st: Staff, world = 'w01'): number {
   return repairBase(world) / sp;
 }
 export function courierCap(s: GameState, st: Staff): number {
-  const base = 3 + Math.floor(st.lv / 2) + (trait('courier', st.trait).cap ?? 0);
+  const base = 3 + Math.floor(st.lv / 2) + (trait('courier', st.trait).cap ?? 0) + Math.floor(rstat(s, 'cap'));
   return Math.floor(base * (hasMechanic(s, 'bigcart') ? 1.5 : 1));
 }
 export function tripTime(s: GameState, st: Staff, world: string, express = false): number {
@@ -137,15 +137,15 @@ export const branchMult = (s: GameState) => (1 + s.perm) * staffMult(s) * archiv
 export function relocateGain(s: GameState): number {
   const need = relocateAt(s.relocations);
   const over = Math.max(1, s.branchCredit / need);
-  const base = s.relocations < RELOCATIONS.length ? 0.5 : 0.25;
-  return base + Math.min(1, 0.6 * Math.log10(over));
+  // 目標をどれだけ超えて貯めたかに比例して少し増える（最大+1.0）
+  return 0.5 + Math.min(0.5, 0.25 * (over - 1));
 }
 
 // ---- 報酬 ----
 export function itemFee(s: GameState, it: { world: string; rarity: number; verdict: string | null; repaired: boolean; autoFeeBonus: number }): number {
   const w = WORLD[it.world];
   const guess = it.verdict === 'correct' ? (hasMechanic(s, 'hint') ? 3 : 2) : 1;
-  const fussy = (it.repaired ? 0.05 * (s.facilities.workshop - 1) : 0) + (it.verdict === 'auto' ? 0.03 * (s.facilities.appraisal - 1) : 0) + (it.repaired ? s.staff.filter(x => x.role === 'repairer').reduce((a, x) => Math.max(a, trait('repairer', x.trait).repairFee ?? 0), 0) : 0);
+  const fussy = (it.repaired ? 0.05 * (s.facilities.workshop - 1) + rstat(s, 'repairfee') : 0) + (it.verdict === 'auto' ? 0.03 * (s.facilities.appraisal - 1) + rstat(s, 'autofee') : 0) + (it.repaired ? s.staff.filter(x => x.role === 'repairer').reduce((a, x) => Math.max(a, trait('repairer', x.trait).repairFee ?? 0), 0) : 0);
   return w.value * 1.5 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'fee')) * (1 + fussy + it.autoFeeBonus) * catalogBonus(s, it.world) * branchMult(s);
 }
 export function itemCredit(s: GameState, it: { world: string; rarity: number; verdict?: string | null }): number {
@@ -155,10 +155,12 @@ export function itemCredit(s: GameState, it: { world: string; rarity: number; ve
 }
 
 // ---- 研究 ----
-export function researchCost(s: GameState, id: string): number {
+/** 研究のその段の費用（移転するたびに4倍。信用の使い道が終盤まで残るように） */
+export function researchCostAt(s: GameState, id: string, lv: number): number {
   const r = RESEARCH_BY_ID[id];
-  return Math.round(r.cost * Math.pow(r.growth, rlv(s, id)));
+  return Math.round(r.cost * Math.pow(r.growth, lv) * Math.pow(4, s.relocations));
 }
+export const researchCost = (s: GameState, id: string) => researchCostAt(s, id, rlv(s, id));
 export function researchTime(s: GameState, id: string): number {
   const r = RESEARCH_BY_ID[id];
   return r.hours * HOUR * Math.pow(r.hoursGrowth ?? 1, rlv(s, id));
