@@ -64,7 +64,8 @@ for (const w of WORLDS) {
 export const OWNER: Record<string, OwnerDef> = {};
 for (const list of Object.values(OWNERS_BY_WORLD)) for (const o of list) OWNER[o.id] = o;
 /** 業務日誌の余白（開館のたびに一行ずつ） */
-export const JOURNAL: string[] = journalJson as string[];
+export interface JournalLine { text: string; req?: { relocations?: number; progress?: number; page?: number; minId?: number; noLetters?: boolean } }
+export const JOURNAL: JournalLine[] = journalJson as JournalLine[];
 export const LETTER_THRESHOLDS = [1, 3, 6];
 /** 品物の種類 → 持ち主（owners.json の items で指定されたもの） */
 export const ITEM_OWNER: Record<string, string> = {};

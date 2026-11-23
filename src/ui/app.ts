@@ -2,7 +2,7 @@
 import type { GameState, Report } from '../core/types';
 import type { Tab, Result } from '../core/actions';
 import * as A from '../core/actions';
-import { advance, newReport, mysteryUnlocked } from '../core/engine';
+import { advance, newReport, mysteryUnlocked, nextJournal } from '../core/engine';
 import { load, save, catchUp, startSession } from '../core/save';
 import { h, icon } from './dom';
 import { I } from './icons';
@@ -13,7 +13,7 @@ import { renderStaff } from './screens/staff';
 import { renderMap } from './screens/map';
 import { renderCatalog } from './screens/catalog';
 import { showReport, showClosed, showIntro, showSettings, showLetter } from './modals';
-import { OWNER, MYSTERY, JOURNAL } from '../core/data';
+import { OWNER, MYSTERY } from '../core/data';
 import { slide } from './components';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -272,10 +272,9 @@ export class App {
     if (!onLoad || now - r.from > SESSION_GAP) startSession(this.s, now);
     this.render();
     if (!onLoad || now - r.from > SESSION_GAP) {
-      // 2時間以上あけて開いたら、業務日誌の余白を一行
-      let note: string | undefined;
-      const n = this.s.journal ?? 0;
-      if (now - r.from >= 2 * 3_600_000 && n < JOURNAL.length) { note = JOURNAL[n]; this.s.journal = n + 1; this.s.log.unshift({ at: now, text: `（余白）${note}` }); }
+      // 2時間以上あけて開いたら、業務日誌の余白を一行（1日1行まで）
+      const note = now - r.from >= 2 * 3_600_000 ? nextJournal(this.s, now, r.letters) ?? undefined : undefined;
+      if (note) this.s.log.unshift({ at: now, text: `（余白）${note}` });
       showReport(this, r, pages, note);
     }
   }

@@ -1,6 +1,6 @@
 // ===== 時間経過の処理（純粋なロジック。DOMに触れない） =====
-import type { GameState, ItemInst, Staff, Report, Rarity, Role, Candidate } from './types';
-import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait, ITEM_OWNER, OWNER, WORLD_INDEX } from './data';
+import type { GameState, ItemInst, Staff, Report, Rarity, Role, Candidate, Letter, LetterReq } from './types';
+import { WORLD, WORLDS, ITEMS_BY_WORLD, OWNERS_BY_WORLD, ITEM, LETTER_THRESHOLDS, RESEARCH_BY_ID, STAFF_NAMES, TRAITS, MYSTERY, trait, ITEM_OWNER, OWNER, WORLD_INDEX, JOURNAL } from './data';
 import { rand, pick, shuffle } from './rng';
 import * as B from './balance';
 
@@ -81,11 +81,14 @@ export function assignOwner(s: GameState, world: string, type: string): { type: 
   const fixed = ITEM_OWNER[type];
   if (fixed) {
     const o = OWNER[fixed];
-    const n = s.ownerReturns[fixed] ?? 0;
-    // 次の返却で手紙が届くなら、その手紙が触れている品にする（手紙と同封の品を一致させる）
-    const k = LETTER_THRESHOLDS.findIndex(th => th === n + 1);
-    const want = k >= 0 ? (o.letterItems?.[k] ?? (k === 0 ? o.items?.[0] : null)) : null;
-    if (want) return { type: want, owner: fixed };
+    // 次に届く手紙が触れている品が、まだ運ばれていなければその品にする（手紙と同封の品を一致させる）
+    const k = lettersSent(s, fixed);
+    if (k < LETTER_THRESHOLDS.length) {
+      const pipe = s.items.filter(i => i.owner === fixed);
+      const n = (s.ownerReturns[fixed] ?? 0) + pipe.length;
+      const want = o.letterItems?.[k] ?? (k === 0 ? o.items?.[0] : null);
+      if (want && n + 1 >= LETTER_THRESHOLDS[k] && !pipe.some(i => i.type === want)) return { type: want, owner: fixed };
+    }
     return { type, owner: fixed };
   }
   // 持ち主の決まっていない品は「持ち主不明」（手紙は届かない）。仮の持ち主しかいない世界ではその人たちに
@@ -94,6 +97,36 @@ export function assignOwner(s: GameState, world: string, type: string): { type: 
   const pending = generic.filter(o => hasPending(s, o.id));
   return { type, owner: pick(s, pending.length && rand(s) < 0.8 ? pending : generic).id };
 }
+const lettersSent = (s: GameState, owner: string) => s.letters.filter(l => l.owner === owner).length;
+const trainee = (s: GameState) => s.totals.trips <= 3 && s.relocations === 0;
+function letterReqOk(s: GameState, q: LetterReq | null | undefined): boolean {
+  if (!q) return true;
+  if ((q.relocations ?? 0) > s.relocations) return false;
+  if (q.progress && s.relocations === (q.relocations ?? 0) && s.branchCredit < q.progress * B.relocateAt(s.relocations)) return false;
+  if (q.page && mysteryUnlocked(s) < q.page) return false;
+  return true;
+}
+/**
+ * この便で届く手紙。
+ * - 返却数が 1・3・6 件に届いていること
+ * - 前の手紙から1日以上たっていること（研修便のあいだは除く）
+ * - 手紙が触れている品（letterItems）があるなら、その品がこの便に入っていること → 同封の記録が手紙の内容と必ずそろう
+ */
+function nextLetter(s: GameState, owner: string, items: ItemInst[], t: number): Letter | null {
+  const o = OWNER[owner];
+  if (!o) return null;
+  const k = lettersSent(s, owner);
+  if (k >= LETTER_THRESHOLDS.length || k >= o.letters.length) return null;
+  if ((s.ownerReturns[owner] ?? 0) < LETTER_THRESHOLDS[k]) return null;
+  const last = s.letters.filter(l => l.owner === owner).reduce((a, l) => Math.max(a, l.at), 0);
+  if (!trainee(s) && last && t - last < 24 * B.HOUR) return null;
+  if (!letterReqOk(s, o.letterReq?.[k])) return null;
+  const want = o.letterItems?.[k] ?? (k === 0 ? o.items?.[0] : null);
+  const it = want ? items.find(i => i.type === want) : items[0];
+  if (!it) return null;
+  return { owner, world: it.world, idx: k, at: t, read: false, type: it.type, item: it.id };
+}
+
 /** 物語が進むよう、手紙の残っている持ち主の品を少し出やすくする */
 function pickType(s: GameState, world: string): string {
   if (rand(s) < 0.45) {
@@ -266,18 +299,17 @@ function returnTrip(s: GameState, st: Staff, world: string, ids: number[], expre
     fee += f; credit += c;
     // 後の世界ほど、返したときにもらえる素材が多い（修理の必要量に見合うように）
     mat += (1 + B.rstat(s, 'material')) * (1 + (tr.material ?? 0)) * (1 + 0.2 * (WORLD_INDEX[world] ?? 0));
-    // 持ち主と手紙
-    if (!it.owner) continue;
-    const before = s.ownerReturns[it.owner] ?? 0;
-    const after = before + 1;
-    s.ownerReturns[it.owner] = after;
-    LETTER_THRESHOLDS.forEach((th, idx) => {
-      if (before < th && after >= th) {
-        s.letters.push({ owner: it.owner, world: it.world, idx, at: t, read: false, type: it.type, item: it.id });
-        r?.letterList.push({ owner: it.owner, idx });
-        letters++;
-      }
-    });
+    // 持ち主
+    if (it.owner) s.ownerReturns[it.owner] = (s.ownerReturns[it.owner] ?? 0) + 1;
+  }
+  // 手紙：持ち主ごとに、この便で届けられる手紙を一通まで
+  const trip = ids.map(id => s.items.find(i => i.id === id)!).filter(Boolean);
+  for (const owner of new Set(trip.map(i => i.owner).filter(Boolean))) {
+    const l = nextLetter(s, owner, trip.filter(i => i.owner === owner), t);
+    if (!l) continue;
+    s.letters.push(l);
+    r?.letterList.push({ owner, idx: l.idx });
+    letters++;
   }
   s.items = s.items.filter(i => !ids.includes(i.id));
   fee = Math.round(fee); credit = Math.round(credit);
@@ -388,3 +420,27 @@ export function mysteryUnlocked(s: GameState): number {
 }
 
 export const itemDef = (it: ItemInst) => ITEM[it.type];
+
+/** 開館時に出す業務日誌の余白（1日1行まで。条件を満たした未読の行のうち、いちばん前のもの） */
+export function nextJournal(s: GameState, now: number, lettersThisTime: number): string | null {
+  const day = new Date(now).toDateString();
+  if (s.journalDay === day) return null;
+  const read = new Set(s.journalRead ?? Array.from({ length: s.journal ?? 0 }, (_, i) => i));
+  const page = mysteryUnlocked(s);
+  const i = JOURNAL.findIndex((l, k) => {
+    if (read.has(k)) return false;
+    const q = l.req;
+    if (!q) return true;
+    if ((q.relocations ?? 0) > s.relocations) return false;
+    if (q.progress && s.relocations === (q.relocations ?? 0) && s.branchCredit < q.progress * B.relocateAt(s.relocations)) return false;
+    if ((q.page ?? 0) > page) return false;
+    if ((q.minId ?? 0) > s.nextId) return false;
+    if (q.noLetters && lettersThisTime > 0) return false;
+    return true;
+  });
+  if (i < 0) return null;
+  read.add(i);
+  s.journalRead = [...read];
+  s.journalDay = day;
+  return JOURNAL[i].text;
+}

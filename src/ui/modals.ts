@@ -208,7 +208,7 @@ export function showReport(app: App, r: Report, pages: { id: number; title: stri
       r.capped ? h('p', { class: 'note', style: { textAlign: 'center', margin: '8px 0 4px' } }, '留守中の業務は、最後に閉じてから24時間分までしか進みません。') : null,
       note ? h('div', { class: 'journal' }, h('span', { class: 'chip' }, '日誌の余白'), h('p', null, note)) : null),
     h('div', { class: 'btn-row' },
-      r.letterList.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'letters'), 260); } }, '手紙を読む')
+      r.letterList.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'letters'), 260); } }, pages.length ? '手紙と記録を読む' : '手紙を読む')
         : pages.length ? h('button', { class: 'btn btn-ghost', onclick: () => { close(); setTimeout(() => app.go('catalog', 'mystery'), 260); } }, '記録を読む') : null,
       h('button', { class: 'btn btn-primary', onclick: close }, '窓口を開ける'))
   ], { title: '開館' });

@@ -4,7 +4,8 @@ export interface WorldDef {
   travelHours: number; value: number; desc: string; x: number; y: number;
 }
 export interface ItemDef { id: string; world: string; name: string; desc: string; clues: string[]; generic?: boolean }
-export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; items?: string[]; letterItems?: (string | null)[]; generic?: boolean }
+export interface OwnerDef { id: string; name: string; profile: string; letters: string[]; items?: string[]; letterItems?: (string | null)[]; letterReq?: (LetterReq | null)[]; generic?: boolean }
+export interface LetterReq { relocations?: number; progress?: number; page?: number }
 export interface MysteryReq { letters?: number; relocations?: number; worlds?: number; catalog?: number; progress?: number; lettersOf?: string[] }
 export interface MysteryDef { id: number; title: string; req: MysteryReq; text: string | null }
 export interface ResearchReq { returns?: number; research?: string }
@@ -90,7 +91,9 @@ export interface GameState {
   mysterySeen: number;
   relocations: number;
   perm: number;          // 移転で積み上がった永続倍率の加算分
-  journal?: number;      // 読んだ業務日誌の余白の行数
+  journal?: number;      // （旧）読んだ業務日誌の余白の行数
+  journalRead?: number[]; // 読んだ業務日誌の余白（行番号）
+  journalDay?: string;    // 最後に余白を出した日付
   firstTrip: boolean;
   totals: { returned: number; appraised: number; correct: number; fee: number; credit: number; trips: number };
   session: SessionStats;
