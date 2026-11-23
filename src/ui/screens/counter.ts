@@ -18,7 +18,7 @@ export function renderCounter(app: App): HTMLElement {
   // ---- 次の一手 ----
   const adv = A.advice(s, now, 20).filter(a => app.tabUnlocked(a.tab).ok).slice(0, 3);
   const closable = A.canClose(s);
-  root.append(section('次の一手', closable ? 'いまできることは済みました' : `${adv.length}件`,
+  root.append(section('次の一手', closable ? (adv.length ? 'いつでも閉められます' : 'いまできることは済みました') : `${adv.length}件`,
     closable ? h('button', { class: 'close-card', onclick: () => showClosed(app) },
       h('span', { class: 'mini-sign' }, '閉館'),
       h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, '窓口を閉める'), h('div', { style: { fontSize: '12px', opacity: .75 } }, '成果と、次に開くとよい時刻を確認する')),
@@ -30,6 +30,15 @@ export function renderCounter(app: App): HTMLElement {
         h('div', { class: 'ticket-go' }, icon(I.arrow))))) :
       (!closable ? h('div', { class: 'empty' }, '今は待つ時間です。配達員の帰りと、次の便を待ちましょう。') : null)
   ));
+
+  // ---- 次の目標（いちばん近いもの） ----
+  const goal = A.nextGoal(s);
+  if (goal && s.totals.trips > 0) {
+    const p = Math.min(1, goal.cur / goal.need);
+    root.append(h('button', { class: 'goal', onclick: () => app.go(goal.tab, goal.anchor) },
+      h('div', { class: 'goal-h' }, h('span', { class: 'chip' }, '次の目標'), h('span', { class: 'grow' }, goal.text)),
+      h('div', { class: 'cap', style: { marginTop: '8px' } }, h('div', { class: 'pbar' }, h('i', { style: { width: `${p * 100}%` } })), h('span', { class: 'num' }, p >= 1 ? '手が届く' : `${num(goal.cur)} / ${num(goal.need)}`))));
+  }
 
   // ---- 転送ゲート ----
   const gateItems = s.items.filter(i => i.stage === 'gate');

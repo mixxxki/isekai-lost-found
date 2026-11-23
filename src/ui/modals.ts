@@ -64,7 +64,8 @@ export function showGuess(app: App, id: number) {
   if (!it) return;
   const def = ITEM[it.type];
   const content = h('div');
-  const { close } = sheet(app, () => [content], { title: '鑑定' });
+  let sheetClosed = false;
+  const { close } = sheet(app, () => [content], { title: '鑑定', onClose: () => { sheetClosed = true; } });
   const tag = h('div', { class: 'tag big-tag unknown', style: { '--rot': tilt(it.id, 1) }, onclick: () => tag.classList.toggle('open') },
     stringSvg(), h('span', { class: 'hole' }),
     h('div', { class: 'tag-no' }, `No.${pad(it.id)}`),
@@ -77,11 +78,11 @@ export function showGuess(app: App, id: number) {
     const w = WORLD[wid];
     const opened = B.openWorlds(s).includes(wid);
     const b = h('button', { class: ['choice', it.strike === wid && 'struck'], style: { '--wc': w.color } },
-      h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : 'まだゲートの線が届いていない世界')));
+      h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : '素材：？')));
     b.addEventListener('click', () => answer(wid));
     return b;
   });
-  const delegate = h('button', { class: 'btn btn-ghost btn-block mt12', onclick: () => { app.act((st, now) => A.delegate(st, [id], now)); next(); } }, '鑑定士に任せる（1件 約3分）');
+  const delegate = h('button', { class: 'btn btn-ghost btn-block mt12', onclick: () => { app.act((st, now) => A.delegate(st, [id], now)); next(); } }, '鑑定士に任せる（約3分・的中の上乗せなし）');
   content.append(tag, clues, h('div', { class: 'note', style: { marginTop: '10px' } }, 'どの世界の品でしょう。当たれば返却時の礼金が上乗せされます。'), h('div', { class: 'choices' }, ...choiceBtns), delegate, after);
 
   function answer(wid: string) {
@@ -104,8 +105,12 @@ export function showGuess(app: App, id: number) {
       h('div', { class: 'result-band' }, right ? `${WORLD[it!.world].name}の品でした。礼金が上乗せされます。` : `正しくは${WORLD[it!.world].name}の品でした。`,
         it!.damaged ? ' 破損しているので修理が必要です。' : ''),
       h('div', { class: 'btn-row mt12' },
-        nextOne ? h('button', { class: 'btn btn-primary', onclick: () => { close(); setTimeout(() => showGuess(app, nextOne.id), 260); } }, '次の品へ', icon(I.arrow, 18)) : null,
-        h('button', { class: 'btn btn-ghost', onclick: close }, '閉じる')));
+        nextOne ? h('button', { class: 'btn btn-primary', onclick: () => goNext() }, '次の品へ', icon(I.arrow, 18)) : null,
+        h('button', { class: 'btn btn-ghost', onclick: () => { cancelled = true; close(); } }, '閉じる')));
+    // 判子を見届けたら、自動で次の品へ（設定で止められる。何か押したら止まる）
+    let cancelled = false, moved = false;
+    const goNext = () => { if (moved || !nextOne) return; moved = true; close(); setTimeout(() => showGuess(app, nextOne.id), 260); };
+    if (nextOne && s.settings.autoNext !== false) setTimeout(() => { if (!cancelled && !sheetClosed) goNext(); }, 1100);
     // 小さい画面でも結果と「次の品へ」が見えるように
     requestAnimationFrame(() => { const sh = after.closest('.sheet'); sh?.scrollTo({ top: sh.scrollHeight, behavior: calm ? 'auto' : 'smooth' }); });
     if (navigator.vibrate && !calm) navigator.vibrate(right ? 18 : [10, 40, 10]);
@@ -241,11 +246,19 @@ export function showClosed(app: App) {
   const rec = A.recommendedOpen(s, now);
   const el = h('div', { class: 'closed', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'inner' },
     h('div', { class: 'sign-wrap' }, h('div', { class: 'sign' }, h('div', { class: 'sign-board' }, '本日閉館'))),
-    h('div', { class: 'rec' }, h('small', null, '次に開くおすすめ時刻'), h('div', { class: 't' }, clock(rec, now)), h('small', null, `いまから約${span(rec - now)}後`),
+    (() => {
+      // 夜中を勧めない：23時〜6時にかかるなら「朝まで大丈夫」を主に出す
+      const hr = new Date(rec).getHours();
+      const night = hr >= 23 || hr < 6;
+      return night
+        ? h('div', { class: 'rec' }, h('small', null, '次に開くのは'), h('div', { class: 't', style: { fontSize: '30px' } }, '朝で大丈夫'), h('small', null, `急ぐなら ${clock(rec, now)}（約${span(rec - now)}後）`),
+            h('p', { class: 'rec-note' }, (() => { const room = B.storageCap(s) - storageUsed(s) - s.items.filter(i => i.stage === 'gate').length; return room > 0 ? `倉庫が満杯になるのは ${clock(s.gate.next + Math.max(0, Math.ceil(room / B.perDelivery(s)) - 1) * B.GATE_INTERVAL, now)} ごろ。品物は消えません。` : '倉庫は満杯ですが、品物はゲート前で待ちます。消えはしません。'; })()))
+        : null;
+    })() ?? h('div', { class: 'rec' }, h('small', null, '次に開くおすすめ時刻'), h('div', { class: 't' }, clock(rec, now)), h('small', null, `いまから約${span(rec - now)}後`),
       h('p', { class: 'rec-note' }, (() => { const room = B.storageCap(s) - storageUsed(s) - s.items.filter(i => i.stage === 'gate').length; return room > 0 ? `アプリを閉じて大丈夫です。品物は消えません。倉庫はあと約${span(room / B.perDelivery(s) * B.GATE_INTERVAL)}ぶんの空きがあります。` : `アプリを閉じて大丈夫です。倉庫は満杯なので、次の便（${clock(s.gate.next, now)}）からはゲート前で待ちます。消えはしません。`; })())),
     h('h2', null, '今回の成果'),
     h('div', { class: 'panel' },
-      ...[['回収', `${ss.collected ?? 0}件`], ['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['配達に出した品', `${ss.shipped ?? 0}件（${ss.dispatched}人）`], ['見込み礼金', `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', `+${num(ss.fee)}`], ['受け取った信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
+      ...[['回収', `${ss.collected ?? 0}件`], ['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['配達に出した品', `${ss.shipped ?? 0}件（${ss.dispatched}便）`], ['見込み礼金', `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', `+${num(ss.fee)}`], ['受け取った信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
         .map(([k, v]) => h('div', { class: 'ln' }, h('span', null, k), h('b', null, v)))),
     h('h2', null, '留守中の予定'),
     h('div', { class: 'panel' }, ...A.timers(s).map(t => h('div', { class: 'ln' },
@@ -314,20 +327,22 @@ export function showSettings(app: App) {
   const input = h('textarea', { class: 'field', placeholder: 'ここに書き出した文字列を貼り付け', 'aria-label': 'インポートする文字列' }) as HTMLTextAreaElement;
   const file = h('input', { type: 'file', accept: '.txt,.json,text/plain,application/json', style: { display: 'none' } }) as HTMLInputElement;
   file.addEventListener('change', async () => { const f = file.files?.[0]; if (f) input.value = await f.text(); });
-  const toggle = (key: 'reduceMotion' | 'autoAssign', title: string, desc: string) => {
-    const sw = h('span', { class: ['switch', s.settings[key] && 'on'], 'aria-hidden': 'true' });
-    const row = h('button', { class: 'toggle toggle-row', role: 'switch', 'aria-checked': String(s.settings[key]) },
+  const toggle = (key: 'reduceMotion' | 'autoAssign' | 'autoNext', title: string, desc: string) => {
+    const val = () => s.settings[key] !== false;
+    const sw = h('span', { class: ['switch', val() && 'on'], 'aria-hidden': 'true' });
+    const row = h('button', { class: 'toggle toggle-row', role: 'switch', 'aria-checked': String(val()) },
       h('div', null, h('div', { class: 'card-t' }, title), h('div', { class: 'card-s' }, desc)), sw);
     row.addEventListener('click', () => {
-      s.settings[key] = !s.settings[key];
-      sw.classList.toggle('on', s.settings[key]);
-      row.setAttribute('aria-checked', String(s.settings[key]));
+      s.settings[key] = !val();
+      sw.classList.toggle('on', val());
+      row.setAttribute('aria-checked', String(val()));
       app.applySettings(); save(s);
     });
     return row;
   };
   sheet(app, close => [
     h('div', { class: 'card' }, toggle('reduceMotion', '動きを減らす', 'アニメーションを最小限にします')),
+    h('div', { class: 'card' }, toggle('autoNext', '鑑定したら自動で次の品へ', '判子のあと、約1秒で次の未鑑定の品を開きます')),
     B.rlv(s, 'auto_assign') > 0 ? h('div', { class: 'card' }, toggle('autoAssign', '回収した品を鑑定士に回す', '「常時委任の規程」による自動の鑑定。止めると、すべて自分で鑑定できます')) : null,
     h('div', { class: 'card' },
       h('div', { class: 'card-t' }, 'エクスポート'),

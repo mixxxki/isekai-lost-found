@@ -98,6 +98,6 @@ export interface GameState {
   totals: { returned: number; appraised: number; correct: number; fee: number; credit: number; trips: number };
   session: SessionStats;
   report: Report | null;   // 留守中のまとめ（開館時に表示）
-  settings: { reduceMotion: boolean; autoAssign: boolean };
+  settings: { reduceMotion: boolean; autoAssign: boolean; autoNext?: boolean };
   log: { at: number; text: string }[];
 }
