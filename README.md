@@ -49,6 +49,12 @@ Vite + TypeScript（フレームワークなし）で作られた PWA で、一�
    - 開けないときは、Windows のファイアウォールで Node.js の「プライベート ネットワーク」の通信を許可してください（初回起動時に出るダイアログで「許可」を押せば OK）。
    - PC の IP アドレスは `ipconfig` の「IPv4 アドレス」でも確認できます。
 
+### 公開版（GitHub Pages）
+
+`main` に push すると、GitHub Actions（`.github/workflows/pages.yml`）がビルドして GitHub Pages に公開します。
+公開先：https://mixxxki.github.io/isekai-lost-found/
+（初回だけ、リポジトリの Settings → Pages → Build and deployment の Source を「GitHub Actions」にしてください）
+
 ### ホーム画面に追加して遊ぶ（PWA）
 
 開発サーバー（`npm run dev`）では Service Worker は動きません。オフライン対応を確かめるときは本番ビルドを使います。
