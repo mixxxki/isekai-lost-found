@@ -38,6 +38,7 @@ export function tagCard(app: App, it: ItemInst, onclick?: () => void): HTMLEleme
   const w = WORLD[it.world];
   const task = app.s.staff.find(x => x.task && (x.task.kind === 'appraise' || x.task.kind === 'repair') && x.task.item === it.id)?.task;
   const el = h('button', {
+    'data-fkey': `t-${it.id}`,
     class: ['tag', !known && 'unknown', it.rarity === 1 && 'rar-1', it.rarity === 2 && 'rar-2', app.fresh('i' + it.id) && 'enter', task && 'busy'],
     style: { '--rot': tilt(it.id), ...(known ? { '--wc': w.color } : {}) },
     'aria-label': [`No.${pad(it.id)} ${def.name}`, known ? w.short : '出どころ不明', STAGE_LABEL[it.stage], it.rarity ? RARITY_NAME[it.rarity] : '', isRequested(app.s, it) ? '依頼品' : '', it.verdict === 'correct' ? '的中' : '', task ? '作業中' : ''].filter(Boolean).join('、'),

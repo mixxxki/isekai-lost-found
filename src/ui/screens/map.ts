@@ -35,7 +35,7 @@ export function renderMap(app: App): HTMLElement {
   for (const w of WORLDS) {
     const p = pos(w.id);
     const o = open.has(w.id);
-    const g = svg('g', { class: 'node', transform: `translate(${p.x} ${p.y})`, role: 'button', 'aria-label': o ? w.name : '未開通の世界', tabindex: 0 });
+    const g = svg('g', { class: 'node', 'data-fkey': `n-${w.id}`, transform: `translate(${p.x} ${p.y})`, role: 'button', 'aria-label': o ? w.name : '未開通の世界', tabindex: 0 });
     if (o) {
       const busy = s.staff.some(x => x.task?.kind === 'trip' && x.task.world === w.id);
       if (busy) g.append(svg('circle', { r: 22, class: 'halo', stroke: w.color }));
@@ -78,7 +78,7 @@ export function renderMap(app: App): HTMLElement {
       h('div', { class: 'mt8' }, pbar(act.start, act.end)),
       h('div', { class: 'row mt8' }, h('span', { class: 'card-s grow' }, '余った信用で、今すぐ終える'),
         h('button', { class: 'btn btn-ghost btn-sm', disabled: s.credit < rush, onclick: () => app.act(A.rushResearch) }, '早める', h('span', { class: 'cost' }, `信用 ${num(rush)}`))),
-      ...queue.map((q, i) => h('div', { class: 'row mt8' }, h('span', { class: 'card-s grow' }, `予約${i + 1}：${RESEARCH_BY_ID[q].name}`),
+      ...queue.map((q, i) => h('div', { class: 'row mt8' }, h('span', { class: 'card-s grow' }, `予約${i + 1}：${RESEARCH_BY_ID[q].name}${RESEARCH_BY_ID[q].max > 1 ? ` Lv${B.rlv(s, q) + 1 + (act?.id === q ? 1 : 0) + queue.slice(0, i).filter(x => x === q).length}` : ''}・${span(RESEARCH_BY_ID[q].hours * B.HOUR * Math.pow(RESEARCH_BY_ID[q].hoursGrowth ?? 1, B.rlv(s, q) + (act?.id === q ? 1 : 0) + queue.slice(0, i).filter(x => x === q).length))}`),
         i === queue.length - 1 ? h('button', { class: 'btn btn-ghost btn-sm', onclick: () => app.act(A.cancelReservation) }, '取消') : null))) : null,
     ...list.map(r => {
       const cost = A.researchCostFor(s, r.id);
@@ -107,11 +107,12 @@ export function renderMap(app: App): HTMLElement {
       h('div', { class: 'card-t' }, `次の移転先：${A.nextPlace(s.relocations)}`),
       h('div', { class: 'card-s' }, next ? `新しい世界「${WORLD[next.world].name}」と、仕組み「${next.mechanicName}」が加わります。` : 'ここから先は、永続倍率を積み上げるための移転です。'),
       h('div', { class: 'cap mt12' }, h('div', { class: 'pbar lg' }, h('i', { style: { width: `${p * 100}%` } })), h('span', { class: 'num' }, `${num(s.branchCredit)}/${num(need)}`)),
-      h('p', { class: 'note' }, A.canRelocate(s) ? `移転できます。移転すると、礼金と信用にずっと掛かる倍率が ×${(1 + s.perm).toFixed(2)} から ×${(1 + s.perm + B.relocateGain(s)).toFixed(2)} になります（目標を超えて貯めるほど少し増えます）。` : 'この期に受け取った信用の合計が目標に届いたら、移転できます。'),
+      h('p', { class: 'note' }, A.canRelocate(s) ? `移転できます。移転すると、礼金と信用にずっと掛かる倍率が ×${(1 + s.perm).toFixed(2)} から ×${(1 + s.perm + B.relocateGain(s)).toFixed(2)} になります。目標を超えて貯めてから移ると加算が増え、目標の10倍で最大（+0.50 → +1.00）。いまは +${B.relocateGain(s).toFixed(2)}。` : 'この期に受け取った信用の合計が目標に届いたら、移転できます。'),
       h('div', { class: 'keep-grid' },
         h('div', null, h('b', null, '残るもの'), h('p', null, '職員とそのLv、図鑑、手紙、落とし主の記録、開通した世界、自動化の規程、段階式の研究の半分')),
         h('div', null, h('b', null, 'なくなるもの'), h('p', null, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）、進行中・予約中の研究（自動化の規程は残り時間ごと残る）'))),
-      h('button', { class: ['btn', 'btn-block', A.canRelocate(s) ? 'btn-red' : 'btn-ghost'], disabled: !A.canRelocate(s), onclick: () => showRelocate(app) }, A.canRelocate(s) ? '移転の手続きへ' : `あと 信用 ${num(Math.max(0, need - s.branchCredit))}`))));
+      !A.canRelocate(s) ? h('p', { style: { margin: '0 0 8px', fontWeight: 700, fontSize: '13.5px' } }, `目標まで あと 信用 ${num(Math.max(0, need - s.branchCredit))}`) : null,
+      h('button', { class: ['btn', 'btn-block', A.canRelocate(s) ? 'btn-red' : 'btn-ghost'], disabled: !A.canRelocate(s), onclick: () => showRelocate(app) }, A.canRelocate(s) ? '移転の手続きへ' : '移転はまだ'))));
   }
   root.append(h('div', { class: 'card' }, h('dl', { class: 'kv' },
     h('dt', null, '永続倍率'), h('dd', null, `×${B.branchMult(s).toFixed(2)}`),
@@ -123,7 +124,7 @@ export function renderMap(app: App): HTMLElement {
 
 function effectNow(stat: string, v: number): string {
   const pct = `+${Math.round(v * 100)}%`;
-  return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}`, autofee: `任せた品の礼金 ${pct}`, repairfee: `直した品の礼金 ${pct}`, cap: `持てる数 +${Math.floor(v)}` } as Record<string, string>)[stat] ?? pct;
+  return ({ fee: `礼金 ${pct}`, credit: `信用 ${pct}`, appraise: `鑑定の速さ ${pct}`, repair: `修理の速さ ${pct}`, travel: `所要時間 -${Math.round(v * 100)}%`, material: `素材 ${pct}`, rare: `珍品率 ${pct}`, arrival: `届く量 ${pct}`, autofee: `任せた品の礼金 ${pct}`, repairfee: `直した品の礼金 ${pct}`, cap: Math.floor(v) ? `持てる数 +${Math.floor(v)}` : '持てる数 +0（あと1段で+1）' } as Record<string, string>)[stat] ?? pct;
 }
 
 /** タップでも Enter / Space でも同じ動作 */

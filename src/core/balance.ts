@@ -18,7 +18,9 @@ export const REQUEST_LIFE = 24 * HOUR;
 export const REQUEST_MULT = 3;
 export const RELOCATE_BASE = 1_000_000;
 /** 移転に必要な信用（1回目は1M。以降は段階的に上がる） */
-export const relocateAt = (n: number) => n <= 4 ? RELOCATE_BASE * Math.pow(10, n) : RELOCATE_BASE * 1e5 * Math.pow(1.5, n - 5);
+/** 移転の目標：100万 → 1500万 → 1.5億 → 15億 → 120億 → 600億、その先は ×1.25 ずつ */
+const RELOCATE_SEQ = [1e6, 1.5e7, 1.5e8, 1.5e9, 1.2e10, 6e10];
+export const relocateAt = (n: number) => n < RELOCATE_SEQ.length ? RELOCATE_SEQ[n] : RELOCATE_SEQ[RELOCATE_SEQ.length - 1] * Math.pow(1.25, n - RELOCATE_SEQ.length + 1);
 /** 終点の先へ移転した回数（6回目以降） */
 export const beyond = (s: GameState) => Math.max(0, s.relocations - 6);
 
@@ -83,7 +85,7 @@ export const levelCost = (st: Staff, s: { relocations: number }) => {
   const base = { appraiser: 40, repairer: 50, courier: 60 }[st.role];
   const cheap = trait(st.role, st.trait).cheap ?? 0;
   // 移転するたびに上げ直しが高くなる（引き継いだLvほど価値がある）
-  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap) * Math.pow(1.8, s.relocations));
+  return Math.round(base * Math.pow(1.42, st.lv - 1) * (1 - cheap) * Math.pow(1.8, Math.min(s.relocations, 6)));
 };
 /** 後の世界の品ほど鑑定に時間がかかる */
 export const appraiseBase = (world: string) => APPRAISE_BASE * (1 + 0.6 * (WORLD_INDEX[world] ?? 0));
@@ -138,7 +140,8 @@ export function relocateGain(s: GameState): number {
   const need = relocateAt(s.relocations);
   const over = Math.max(1, s.branchCredit / need);
   // 目標をどれだけ超えて貯めたかに比例して少し増える（最大+1.0）
-  return 0.5 + Math.min(0.5, 0.25 * (over - 1));
+  // 目標をどれだけ超えて貯めたか（10倍で頭打ち）。待つ時間と倍率を天秤にかける
+  return 0.5 + Math.min(0.5, 0.5 * Math.log10(over));
 }
 
 // ---- 報酬 ----
@@ -151,14 +154,16 @@ export function itemFee(s: GameState, it: { world: string; rarity: number; verdi
 export function itemCredit(s: GameState, it: { world: string; rarity: number; verdict?: string | null }): number {
   const w = WORLD[it.world];
   const guess = it.verdict === 'correct' ? (hasMechanic(s, 'hint') ? 1.5 : 1.2) : 1;
-  return w.value * 1.7 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'credit')) * catalogBonus(s, it.world) * branchMult(s);
+  return w.value * 1.35 * RARITY_MULT[it.rarity] * guess * (1 + rstat(s, 'credit')) * catalogBonus(s, it.world) * branchMult(s);
 }
 
 // ---- 研究 ----
 /** 研究のその段の費用（移転するたびに4倍。信用の使い道が終盤まで残るように） */
 export function researchCostAt(s: GameState, id: string, lv: number): number {
   const r = RESEARCH_BY_ID[id];
-  return Math.round(r.cost * Math.pow(r.growth, lv) * Math.pow(4, s.relocations));
+  // 6回目まで ×4ずつ、終点の先は ×1.5ずつ（上限の広がりを実際に買えるように）
+  const n = s.relocations;
+  return Math.round(r.cost * Math.pow(r.growth, lv) * Math.pow(4, Math.min(n, 6)) * Math.pow(1.5, Math.max(0, n - 6)));
 }
 export const researchCost = (s: GameState, id: string) => researchCostAt(s, id, rlv(s, id));
 export function researchTime(s: GameState, id: string): number {

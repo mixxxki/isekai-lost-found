@@ -713,6 +713,12 @@ button { font: inherit; color: inherit; }
   animation: tagIn .8s .4s var(--ease-spring) both; --rot: -1deg;
 }
 .closed .rec .t { font-family: var(--mono); font-size: 40px; line-height: 1.1; }
+.guess-body.swap { animation: swapIn .28s var(--ease-out); }
+@keyframes swapIn { from { opacity: 0; transform: translateX(18px); } }
+.btn-sub { display: block; font-size: 11px; font-weight: 400; opacity: .8; letter-spacing: .02em; }
+.btn-block { white-space: normal; line-height: 1.35; }
+.btn.has-sub { flex-direction: column; gap: 2px; padding-top: 8px; padding-bottom: 8px; }
+.ticket-no small { opacity: 1; }
 .goal { display: block; width: 100%; text-align: left; border: 0; cursor: pointer; margin: -10px 0 24px; padding: 12px 14px; border-radius: 12px; background: var(--paper-3); box-shadow: inset 0 0 0 1.5px var(--green), 0 3px 0 rgba(31, 77, 63, .18); min-height: 44px; transition: transform .15s var(--ease-out); }
 .goal:active { transform: translateY(2px); }
 .goal-h { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }

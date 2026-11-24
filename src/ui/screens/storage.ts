@@ -73,7 +73,7 @@ export function renderStorage(app: App): HTMLElement {
   const idle = A.idleCouriers(s);
   root.append(section('返却待ち', `${ready.length}件・手の空いた配達員${idle.length}人`,
     h('div', { id: 'a-ready' }, ready.length ? h('div', null,
-      idle.length > 1 && new Set(ready.map(i => i.world)).size > 0 ? h('button', { class: 'btn btn-primary btn-block', style: { marginBottom: '6px' }, onclick: () => app.act(A.sendAll) }, `手の空いた${idle.length}人を、多い世界から順に出発させる`) : null,
+      A.sendAllCount(s) > 1 ? h('button', { class: 'btn btn-primary btn-block has-sub', style: { marginBottom: '6px' }, onclick: () => app.act(A.sendAll) }, `${A.sendAllCount(s)}人を出発させる`, h('small', { class: 'btn-sub' }, '返却待ちの多い世界から順に')) : null,
       ...[...new Set(ready.map(i => i.world))].sort((a, b) => ready.filter(i => i.world === b).length - ready.filter(i => i.world === a).length).map(w => {
       const list = ready.filter(i => i.world === w);
       const c = idle[0];

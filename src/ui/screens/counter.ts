@@ -19,12 +19,12 @@ export function renderCounter(app: App): HTMLElement {
   const adv = A.advice(s, now, 20).filter(a => app.tabUnlocked(a.tab).ok).slice(0, 3);
   const closable = A.canClose(s);
   root.append(section('次の一手', closable ? (adv.length ? 'いつでも閉められます' : 'いまできることは済みました') : `${adv.length}件`,
-    closable ? h('button', { class: 'close-card', onclick: () => showClosed(app) },
+    closable ? h('button', { class: 'close-card', 'data-fkey': 'close', onclick: () => showClosed(app) },
       h('span', { class: 'mini-sign' }, '閉館'),
       h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, '窓口を閉める'), h('div', { style: { fontSize: '12px', opacity: .75 } }, '成果と、次に開くとよい時刻を確認する')),
       icon(I.arrow)) : null,
     adv.length ? h('div', { class: 'tickets' }, ...adv.map((a, i) =>
-      h('button', { class: 'ticket', onclick: () => app.go(a.tab, a.anchor) },
+      h('button', { class: 'ticket', 'data-fkey': `tk-${i}`, onclick: () => app.go(a.tab, a.anchor) },
         h('div', { class: 'ticket-no' }, h('b', null, String(i + 1)), h('small', null, a.sub)),
         h('div', { class: 'ticket-body' }, h('div', { class: 't' }, a.text)),
         h('div', { class: 'ticket-go' }, icon(I.arrow))))) :

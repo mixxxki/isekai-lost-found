@@ -41,6 +41,7 @@ export class App {
   modalOpen = 0;
   shown = { fee: 0, credit: 0 };
   mysteryKnown = 0;
+  pressing = false;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -57,6 +58,7 @@ export class App {
       this.reopen(now, true);
     }
     this.applySettings();
+    if (document.hidden) this.hiddenAt = Date.now();
     save(this.s);
     setInterval(() => this.tick(), 1000);
     setInterval(() => save(this.s), 5000);
@@ -77,6 +79,10 @@ export class App {
     this.root.append(this.header, this.main, this.tabbar);
     // トーストはモーダル中（背面が操作不可のとき）でも押せるよう、#app の外に置く
     document.body.append(this.toasts);
+    this.main.addEventListener('pointerdown', () => { this.pressing = true; });
+    const release = () => { if (!this.pressing) return; this.pressing = false; setTimeout(() => { if (this.signature() !== this.sig && this.modalOpen === 0) this.render(); }, 0); };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
   }
 
   tabUnlocked(t: Tab): { ok: boolean; why: string } {
@@ -107,6 +113,8 @@ export class App {
 
   // ---------- 描画 ----------
   render(animate = false) {
+    // 描き直しの前にフォーカスしていた要素を覚えておき、作り直した同じ要素へ戻す
+    const fk = (document.activeElement as HTMLElement | null)?.dataset?.fkey;
     this.renderHeader();
     this.renderTabs();
     const top = this.main.scrollTop;
@@ -116,6 +124,7 @@ export class App {
     if (!animate) this.main.scrollTop = top;
     this.updateTimers();
     this.sig = this.signature();
+    if (fk && this.modalOpen === 0) document.querySelector<HTMLElement>(`[data-fkey="${fk}"]`)?.focus({ preventScroll: true });
   }
 
   renderScreen(): HTMLElement {
@@ -138,7 +147,7 @@ export class App {
         h('div', { class: 'brand' },
           h('div', { class: 'brand-title' }, '異世界遺失物センター'),
           h('div', { class: 'brand-sub' }, `${place}　第${s.relocations + 1}期`)),
-        h('button', { class: 'icon-btn', 'aria-label': '設定', onclick: () => showSettings(this) }, icon(I.gear, 22))),
+        h('button', { class: 'icon-btn', 'data-fkey': 'gear', 'aria-label': '設定', onclick: () => showSettings(this) }, icon(I.gear, 22))),
       h('div', { class: 'wallet' }, coin('礼金', 'fee'), coin('信用', 'credit'))
     );
     this.animateCoins();
@@ -208,7 +217,8 @@ export class App {
     this.announce(r);
     // 手紙などを開いている間は記録の知らせを待たせ、閉じてから出す
     if (this.modalOpen === 0) for (const p of this.newPages()) this.toast(`落とし主の記録に、第${p.id}頁「${p.title}」が綴じ込まれました`, 'good', () => this.go('catalog', 'mystery'));
-    if (this.signature() !== this.sig) {
+    // 指で押している最中は描き直さない（押したボタンが作り直されてタップが消えないように）
+    if (this.signature() !== this.sig && !this.pressing) {
       if (this.modalOpen === 0) this.render();
       else { this.renderHeader(); this.renderTabs(); }
     }
@@ -292,7 +302,8 @@ export class App {
   onVisibility() {
     const now = Date.now();
     if (document.hidden) { this.hiddenAt = now; save(this.s, now); return; }
-    if (this.hiddenAt && now - this.hiddenAt > SESSION_GAP) this.reopen(now, false);
+    // 裏で版が切り替わって読み込み直した場合も、最後に処理した時刻からの差で判断する
+    if (now - this.s.lastTick > SESSION_GAP || (this.hiddenAt && now - this.hiddenAt > SESSION_GAP)) this.reopen(now, false);
     else this.tick();
   }
 

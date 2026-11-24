@@ -21,10 +21,16 @@ function trap(app: App, dialog: HTMLElement, title: HTMLElement | null, close: (
   dialog.tabIndex = -1;
   (app.root as any).inert = true;
   dialog.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
-  requestAnimationFrame(() => (dialog.querySelector<HTMLElement>('.sheet .btn, .closed .btn, button:not(.x-btn)') ?? dialog).focus({ preventScroll: true }));
+  // 開いた直後は見出しへ（Enter一回で選択肢を押してしまわないように）
+  if (title) title.tabIndex = -1;
+  requestAnimationFrame(() => (title ?? dialog).focus({ preventScroll: true }));
   return () => {
     if (app.modalOpen <= 0) (app.root as any).inert = false;
-    if (prev?.isConnected) prev.focus({ preventScroll: true });
+    const key = prev?.dataset?.fkey ?? (prev as unknown as SVGElement)?.dataset?.fkey;
+    requestAnimationFrame(() => {
+      const el = prev?.isConnected ? prev : key ? document.querySelector<HTMLElement>(`[data-fkey="${key}"]`) : null;
+      el?.focus({ preventScroll: true });
+    });
   };
 }
 function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { title?: string; onClose?: () => void } = {}) {
@@ -58,68 +64,87 @@ function sheet(app: App, build: (close: Closer) => (Node | null)[], opts: { titl
 }
 
 // ---------- 鑑定（3択） ----------
-export function showGuess(app: App, id: number) {
+export function showGuess(app: App, firstId: number) {
   const s = app.s;
-  const it = s.items.find(i => i.id === id);
-  if (!it) return;
-  const def = ITEM[it.type];
-  const content = h('div');
+  if (!s.items.some(i => i.id === firstId)) return;
+  const content = h('div', { class: 'guess-body' });
   let sheetClosed = false;
+  let done = 0, hits = 0;
   const { close } = sheet(app, () => [content], { title: '鑑定', onClose: () => { sheetClosed = true; } });
-  const tag = h('div', { class: 'tag big-tag unknown', style: { '--rot': tilt(it.id, 1) }, onclick: () => tag.classList.toggle('open') },
-    stringSvg(), h('span', { class: 'hole' }),
-    h('div', { class: 'tag-no' }, `No.${pad(it.id)}`),
-    h('div', { class: 'tag-name' }, def.name),
-    h('div', { class: 'desc' }, def.desc),
-    h('div', { class: 'tag-foot' }, it.rarity ? h('span', { class: 'chip red' }, `${B.RARITY_NAME[it.rarity]}（礼金・信用×${B.RARITY_MULT[it.rarity]}）`) : null, isRequested(s, it) ? h('span', { class: 'chip green' }, '依頼品（報酬×3）') : null));
-  const clues = h('div', { class: 'clues' }, ...def.clues.map((c, i) => h('div', { class: 'clue' }, h('b', null, `手がかり${i + 1}`), c)));
-  const after = h('div');
-  const choiceBtns = it.choices.map(wid => {
-    const w = WORLD[wid];
-    const opened = B.openWorlds(s).includes(wid);
-    const b = h('button', { class: ['choice', it.strike === wid && 'struck'], style: { '--wc': w.color } },
-      h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : '素材：？')));
-    b.addEventListener('click', () => answer(wid));
-    return b;
-  });
-  const delegate = h('button', { class: 'btn btn-ghost btn-block mt12', onclick: () => { app.act((st, now) => A.delegate(st, [id], now)); next(); } }, '鑑定士に任せる（約3分・的中の上乗せなし）');
-  content.append(tag, clues, h('div', { class: 'note', style: { marginTop: '10px' } }, 'どの世界の品でしょう。当たれば返却時の礼金が上乗せされます。'), h('div', { class: 'choices' }, ...choiceBtns), delegate, after);
+  const calm = () => s.settings.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const sheetEl = () => content.closest('.sheet') as HTMLElement | null;
+  fill(firstId);
 
-  function answer(wid: string) {
-    const r = app.act((st, now) => A.guess(st, id, wid, now), true);
-    if (!r.ok) return;
-    const right = wid === it!.world;
-    const calm = s.settings.reduceMotion || matchMedia('(prefers-reduced-motion: reduce)').matches;
-    choiceBtns.forEach((b, i) => {
-      const c = it!.choices[i];
-      b.classList.add(c === it!.world ? 'right' : c === wid ? 'wrong' : 'dim');
-      (b as HTMLButtonElement).disabled = true;
+  /** シートは開いたまま、中身だけを差し替える（暗幕やシートが上下しない） */
+  function fill(id: number) {
+    const it = s.items.find(i => i.id === id);
+    if (!it || it.stage !== 'unknown') { close(); return; }
+    const def = ITEM[it.type];
+    const tag = h('div', { class: 'tag big-tag unknown', style: { '--rot': tilt(it.id, 1) }, onclick: () => tag.classList.toggle('open') },
+      stringSvg(), h('span', { class: 'hole' }),
+      h('div', { class: 'tag-no' }, `No.${pad(it.id)}`),
+      h('div', { class: 'tag-name' }, def.name),
+      h('div', { class: 'desc' }, def.desc),
+      h('div', { class: 'tag-foot' }, it.rarity ? h('span', { class: 'chip red' }, `${B.RARITY_NAME[it.rarity]}（礼金・信用×${B.RARITY_MULT[it.rarity]}）`) : null, isRequested(s, it) ? h('span', { class: 'chip green' }, '依頼品（報酬×3）') : null));
+    const clues = h('div', { class: 'clues' }, ...def.clues.map((c, i) => h('div', { class: 'clue' }, h('b', null, `手がかり${i + 1}`), c)));
+    const after = h('div');
+    const choiceBtns = it.choices.map(wid => {
+      const w = WORLD[wid];
+      const opened = B.openWorlds(s).includes(wid);
+      const b = h('button', { class: ['choice', it.strike === wid && 'struck'], style: { '--wc': w.color } },
+        h('div', null, w.name, h('small', null, opened ? `素材：${w.material}` : '素材：？')));
+      b.addEventListener('click', () => answer(wid));
+      return b;
     });
-    delegate.remove();
-    tag.classList.remove('unknown');
-    tag.style.setProperty('--wc', WORLD[it!.world].color);
-    tag.classList.add('stamped');
-    tag.append(h('div', { class: ['stamp', 'big', 'press', !right && 'gray'] }, right ? '的中' : '外れ'));
-    const nextOne = app.s.items.find(i => i.stage === 'unknown');
-    after.append(
-      h('div', { class: 'result-band' }, right ? `${WORLD[it!.world].name}の品でした。礼金が上乗せされます。` : `正しくは${WORLD[it!.world].name}の品でした。`,
-        it!.damaged ? ' 破損しているので修理が必要です。' : ''),
-      h('div', { class: 'btn-row mt12' },
-        nextOne ? h('button', { class: 'btn btn-primary', onclick: () => goNext() }, '次の品へ', icon(I.arrow, 18)) : null,
-        h('button', { class: 'btn btn-ghost', onclick: () => { cancelled = true; close(); } }, '閉じる')));
-    // 判子を見届けたら、自動で次の品へ（設定で止められる。何か押したら止まる）
-    let cancelled = false, moved = false;
-    const goNext = () => { if (moved || !nextOne) return; moved = true; close(); setTimeout(() => showGuess(app, nextOne.id), 260); };
-    if (nextOne && s.settings.autoNext !== false) setTimeout(() => { if (!cancelled && !sheetClosed) goNext(); }, 1100);
-    // 小さい画面でも結果と「次の品へ」が見えるように
-    requestAnimationFrame(() => { const sh = after.closest('.sheet'); sh?.scrollTo({ top: sh.scrollHeight, behavior: calm ? 'auto' : 'smooth' }); });
-    if (navigator.vibrate && !calm) navigator.vibrate(right ? 18 : [10, 40, 10]);
+    const delegate = h('button', { class: 'btn btn-ghost btn-block has-sub mt12', onclick: () => { app.act((st, now) => A.delegate(st, [id], now)); const n = nextUnknown(); if (n) fill(n.id); else close(); } },
+      '鑑定士に任せる', h('small', { class: 'btn-sub' }, '約3分・的中の上乗せなし'));
+    const remain = s.items.filter(i => i.stage === 'unknown').length;
+    content.classList.remove('swap'); void content.offsetWidth; content.classList.add('swap');
+    content.replaceChildren(tag, clues,
+      h('div', { class: 'note', style: { marginTop: '10px' } }, `どの世界の品でしょう。当たれば返却時の礼金が上乗せされます。（未鑑定 残り${remain}件）`),
+      h('div', { class: 'choices' }, ...choiceBtns), delegate, after);
+    sheetEl()?.scrollTo({ top: 0 });
+
+    function answer(wid: string) {
+      const r = app.act((st, now) => A.guess(st, id, wid, now), true);
+      if (!r.ok) return;
+      const right = wid === it!.world;
+      done++; if (right) hits++;
+      choiceBtns.forEach((b, i) => {
+        const c = it!.choices[i];
+        b.classList.add(c === it!.world ? 'right' : c === wid ? 'wrong' : 'dim');
+        (b as HTMLButtonElement).disabled = true;
+      });
+      delegate.remove();
+      tag.classList.remove('unknown');
+      tag.style.setProperty('--wc', WORLD[it!.world].color);
+      tag.classList.add('stamped');
+      tag.append(h('div', { class: ['stamp', 'big', 'press', !right && 'gray'] }, right ? '的中' : '外れ'));
+      const nextOne = nextUnknown();
+      const band = h('div', { class: 'result-band', tabindex: -1 }, right ? `${WORLD[it!.world].name}の品でした。礼金が上乗せされます。` : `正しくは${WORLD[it!.world].name}の品でした。`,
+        it!.damaged ? ' 破損しているので修理が必要です。' : '',
+        !nextOne ? h('div', { style: { marginTop: '6px', fontWeight: 700 } }, `今回の鑑定：${done}件中 ${hits}件 的中`) : null);
+      const hasReady = s.items.some(i => i.stage === 'ready');
+      after.append(band,
+        h('div', { class: 'btn-row mt12' },
+          nextOne ? h('button', { class: 'btn btn-primary', onclick: () => goNext() }, '次の品へ', icon(I.arrow, 18))
+            : hasReady ? h('button', { class: 'btn btn-primary', onclick: () => { cancelled = true; close(); setTimeout(() => app.go('storage', 'ready'), 260); } }, '返却待ちへ', icon(I.arrow, 18)) : null,
+          h('button', { class: 'btn btn-ghost', onclick: () => { cancelled = true; close(); } }, '閉じる')));
+      band.focus({ preventScroll: true });
+      // 判子を見届けたら、自動で次の品へ。触る・スクロール・キー操作・別のシートが開いたら止める
+      let cancelled = false, moved = false;
+      const stop = () => { cancelled = true; };
+      const sh = sheetEl();
+      const opts = { once: true, passive: true } as AddEventListenerOptions;
+      setTimeout(() => { sh?.addEventListener('pointerdown', stop, opts); sh?.addEventListener('wheel', stop, opts); sh?.addEventListener('touchmove', stop, opts); sh?.addEventListener('keydown', stop, { once: true }); }, 50);
+      const goNext = () => { if (moved || !nextOne) return; moved = true; fill(nextOne.id); };
+      if (nextOne && s.settings.autoNext !== false) setTimeout(() => { if (!cancelled && !sheetClosed && app.modalOpen === 1) goNext(); }, 1100);
+      // 小さい画面でも結果と「次の品へ」が見えるように
+      requestAnimationFrame(() => sh?.scrollTo({ top: sh.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }));
+      if (navigator.vibrate && !calm()) navigator.vibrate(right ? 18 : [10, 40, 10]);
+    }
   }
-  function next() {
-    const n = app.s.items.find(i => i.stage === 'unknown');
-    close();
-    if (n) setTimeout(() => showGuess(app, n.id), 260);
-  }
+  function nextUnknown() { return s.items.find(i => i.stage === 'unknown'); }
 }
 
 // ---------- 品物の詳細 ----------
@@ -144,7 +169,9 @@ export function showItem(app: App, id: number) {
       h('dt', null, '持ち主'), h('dd', null, ownerName(it.owner, it.world)),
       h('dt', null, '見込み礼金'), h('dd', null, num(B.itemFee(s, it))),
       h('dt', null, '見込み信用'), h('dd', null, num(B.itemCredit(s, it))))) : null,
-    it.stage === 'damaged' ? h('button', { class: 'btn btn-primary btn-block mt12', onclick: () => { app.act((st, now) => A.repair(st, [id], now)); close(); } }, `工房へ回す（${w.material} ${B.repairMaterials(s, it.world)}）`) : null,
+    it.stage === 'damaged' ? ((s.materials[it.world] ?? 0) >= B.repairMaterials(s, it.world)
+      ? h('button', { class: 'btn btn-primary btn-block mt12', onclick: () => { app.act((st, now) => A.repair(st, [id], now)); close(); } }, `工房へ回す（${w.material} ${B.repairMaterials(s, it.world)}）`)
+      : h('p', { style: { color: 'var(--red-d)', fontWeight: 700, fontSize: '13px' } }, `${w.material}が足りません（あと${Math.ceil(B.repairMaterials(s, it.world) - (s.materials[it.world] ?? 0))}）。${w.short}の品を返すと手に入ります。`)) : null,
     h('button', { class: 'btn btn-ghost btn-block mt12', onclick: close }, '閉じる')
   ], { title: '品物' });
 }
@@ -309,11 +336,11 @@ export function showRelocate(app: App) {
       next ? h('div', { class: 'ln' }, h('span', null, '新しい仕組み'), h('b', null, next.mechanicName)) : null,
       next ? h('p', { class: 'note' }, next.mechanicDesc) : h('p', { class: 'note' }, '終点の先の窓口。新しい世界はないが、永続倍率がさらに積み上がる。'),
       h('div', { class: 'ln' }, h('span', null, '移転の倍率'), h('b', null, `×${(1 + s.perm).toFixed(2)} → ×${(1 + s.perm + gain).toFixed(2)}（+${gain.toFixed(2)}）`)),
-      h('p', { class: 'note' }, '目標を超えて信用を貯めてから移転すると、加算が少し増えます（最大+1.0まで上乗せ）。')),
+      h('p', { class: 'note' }, '目標を超えて貯めてから移るほど加算が増えます（目標の2倍で+0.65、10倍で最大の+1.00）。')),
     h('div', { class: 'card' },
       s.research.active && !RESEARCH_BY_ID[s.research.active.id].keep ? h('p', { style: { color: 'var(--red-d)', fontWeight: 700, fontSize: '13px', margin: '0 0 10px' } }, `進行中の研究「${RESEARCH_BY_ID[s.research.active.id].name}」は中止されます。`) : null,
       h('div', { class: 'card-t' }, '残るもの'), h('p', { class: 'note', style: { margin: '4px 0 10px' } }, '職員とそのLv（Lvの合計が倍率になる）、図鑑（収集率が倍率になる）、手紙、落とし主の記録、開通した世界、自動化の規程、段階式の研究の半分'),
-      h('div', { class: 'card-t' }, 'なくなるもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）')),
+      h('div', { class: 'card-t' }, 'なくなるもの'), h('p', { class: 'note', style: { margin: '4px 0 0' } }, '礼金、信用、素材、倉庫の品物、施設のLv（職員が働ける分は残る）、予約中の研究（費用は払い戻されるが、信用ごとなくなる）')),
     h('div', { class: 'btn-row mt16' },
       h('button', { class: 'btn btn-ghost', onclick: close }, 'やめておく'),
       h('button', { class: 'btn btn-red', onclick: () => { close(); app.act(A.relocate); setTimeout(() => { app.go('counter'); app.main.scrollTop = 0; }, 280); } }, '移転する'))

@@ -75,6 +75,19 @@ export function send(s: GameState, world: string, now: number, express = false, 
   return ok(`${st.name}が${WORLD[world].short}へ出発しました（${n}件）${lastTrainee ? '。研修便はこれで最後。次からは往復に1〜2時間ほどかかります' : ''}`);
 }
 
+/** 一括出発で実際に出発する人数（sendAll と同じ割り当てを試算） */
+export function sendAllCount(s: GameState): number {
+  const counts: Record<string, number> = {};
+  for (const it of s.items) if (it.stage === 'ready') counts[it.world] = (counts[it.world] ?? 0) + 1;
+  let n = 0;
+  for (const c of idleCouriers(s)) {
+    const best = Object.entries(counts).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0];
+    if (!best) break;
+    counts[best[0]] -= B.courierCap(s, c);
+    n++;
+  }
+  return n;
+}
 /** 手の空いた配達員を全員、返却待ちの多い世界から順に出発させる */
 export function sendAll(s: GameState, now: number): Result {
   let n = 0;
@@ -192,7 +205,7 @@ export function rushResearch(s: GameState, now: number): Result {
   a.end = now; a.start = Math.min(a.start, now - 1);
   advance(s, now);
   acted(s);
-  return ok(d > 0 ? '研究を早めて終えました' : '研究が終わりました');
+  return ok(d > 0 ? `「${RESEARCH_BY_ID[a.id].name}」を早めて終えました` : '研究が終わりました');
 }
 /** 最後に入れた予約を取り消して、費用を払い戻す */
 export function cancelReservation(s: GameState): Result {
