@@ -247,6 +247,8 @@ export function showReport(app: App, r: Report, pages: { id: number; title: stri
   const senders = [...new Set(r.letterList.map(l => OWNER[l.owner]?.name).filter(Boolean))];
   if (senders.length) lines.push(['手紙の差出人', senders.slice(0, 3).join('、') + (senders.length > 3 ? ` ほか${senders.length - 3}人` : '')]);
   for (const p of pages) lines.push([`綴じ込まれた頁`, `第${p.id}頁「${p.title}」`]);
+  // 移転して2日のあいだは、倍率の効き目を見せる
+  if (app.s.relocatedAt && app.s.prevMult && r.to - app.s.relocatedAt < 48 * 3_600_000) lines.push(['移転の効き目', `倍率 ×${app.s.prevMult.toFixed(2)} → ×${B.branchMult(app.s).toFixed(2)}`]);
   const done: Record<string, number> = {};
   for (const n of r.research) done[n] = (done[n] ?? 0) + 1;
   for (const [n, c] of Object.entries(done)) lines.push(['完了した研究', c > 1 ? `${n}（${c}段）` : n]);
@@ -285,13 +287,15 @@ export function showClosed(app: App) {
       h('p', { class: 'rec-note' }, (() => { const room = B.storageCap(s) - storageUsed(s) - s.items.filter(i => i.stage === 'gate').length; return room > 0 ? `アプリを閉じて大丈夫です。品物は消えません。倉庫はあと約${span(room / B.perDelivery(s) * B.GATE_INTERVAL)}ぶんの空きがあります。` : `アプリを閉じて大丈夫です。倉庫は満杯なので、次の便（${clock(s.gate.next, now)}）からはゲート前で待ちます。消えはしません。`; })())),
     h('h2', null, '今回の成果'),
     h('div', { class: 'panel' },
-      ...[['回収', `${ss.collected ?? 0}件`], ['鑑定', `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', `${ss.repaired}件`], ['配達に出した品', `${ss.shipped ?? 0}件（${ss.dispatched}便）`], ['見込み礼金', `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', `+${num(ss.fee)}`], ['受け取った信用', `+${num(ss.credit)}`], ['手紙', `${ss.letters}通`]]
-        .map(([k, v]) => h('div', { class: 'ln' }, h('span', null, k), h('b', null, v)))),
+      ...([['回収', ss.collected ?? 0, `${ss.collected ?? 0}件`], ['鑑定', ss.appraised, `${ss.appraised}件（的中 ${ss.correct}）`], ['修理', ss.repaired, `${ss.repaired}件`], ['配達に出した品', ss.shipped ?? 0, `${ss.shipped ?? 0}件（${ss.dispatched}便）`], ['見込み礼金', ss.shippedFee ?? 0, `+${num(ss.shippedFee ?? 0)}`], ['受け取った礼金', ss.fee, `+${num(ss.fee)}`], ['受け取った信用', ss.credit, `+${num(ss.credit)}`], ['手紙', ss.letters, `${ss.letters}通`], ['研究・拡張・採用', ss.invested ?? 0, `${ss.invested ?? 0}件`]] as [string, number, string][])
+        .filter(([, n]) => n > 0).map(([k, , v]) => [k, v])
+        .map(([k, v]) => h('div', { class: 'ln' }, h('span', null, k), h('b', null, v))),
+      Object.values(ss).every(v => !v || typeof v !== 'number' || v === ss.startedAt) ? h('div', { class: 'ln' }, h('span', null, '今回は見守るだけの回でした'), h('b', null, '')) : null),
     h('h2', null, '留守中の予定'),
     h('div', { class: 'panel' }, ...A.timers(s).map(t => h('div', { class: 'ln' },
       h('span', { class: 'row', style: { gap: '8px' } }, t.color ? h('span', { class: 'wdot', style: { background: t.color } }) : null, t.label),
       h('b', null, clock(t.at, now))))),
-    s.items.some(i => i.stage === 'ready') ? h('p', { style: { fontSize: '12.5px', opacity: .8, textAlign: 'center', margin: '12px 0 0' } }, `返却待ち${s.items.filter(i => i.stage === 'ready').length}件は、配達員が戻りしだい出せます。`) : null,
+    s.items.some(i => i.stage === 'ready') ? h('p', { style: { fontSize: '12.5px', opacity: .8, textAlign: 'center', margin: '12px 0 0' } }, B.rlv(s, 'auto_dispatch') > 0 ? `返却待ち${s.items.filter(i => i.stage === 'ready').length}件は、定期便が出します。` : `返却待ち${s.items.filter(i => i.stage === 'ready').length}件は、配達員が戻りしだい出せます。`) : null,
     h('div', { class: 'actions' }, h('div', { class: 'btn-row' },
       h('button', { class: 'btn btn-tag', onclick: () => done() }, '窓口に戻る')))));
   document.body.append(el);

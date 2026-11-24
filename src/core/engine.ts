@@ -188,7 +188,8 @@ export function collect(s: GameState, t: number): number {
   // 珍品・逸品と依頼品は、自分で鑑定できるよう手元に残す
   for (let i = 0; i < n; i++) {
     const it = gateItems[i];
-    it.stage = auto && it.rarity === 0 && !req.has(it.type) ? 'qAppraise' : 'unknown';
+    // 着任・移転して最初の便（ゲートがまだ一度も開いていない）は、自分で鑑定できるよう手元に残す
+    it.stage = auto && s.gate.deliveries > 0 && it.rarity === 0 && !req.has(it.type) ? 'qAppraise' : 'unknown';
   }
   if (n) assignWork(s, t);
   return n;
@@ -212,7 +213,11 @@ export function assignWork(s: GameState, t: number) {
       for (const it of s.items) if (it.stage === 'ready') counts[it.world] = (counts[it.world] ?? 0) + 1;
       const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
       const need = B.hasMechanic(s, 'bigcart') ? Math.ceil(B.courierCap(s, st) / 2) : Math.min(B.courierCap(s, st), 3);
-      if (best && best[1] >= need) dispatch(s, st, best[0], t, false);
+      // 設定で「定期便も速達で」にしていれば、前払いできるときは速達で出す
+      if (best && best[1] >= need) {
+        const ex = !!s.settings.autoExpress && B.hasMechanic(s, 'express');
+        if (!(ex && dispatch(s, st, best[0], t, true))) dispatch(s, st, best[0], t, false);
+      }
     }
   }
 }
@@ -354,7 +359,7 @@ function finishResearch(s: GameState, r: Report | null) {
   const def = RESEARCH_BY_ID[a.id];
   if (r) r.research.push(def.name);
   if (def.kind === 'world' && def.world) {
-    s.materials[def.world] = (s.materials[def.world] ?? 0) + 6;
+    s.materials[def.world] = (s.materials[def.world] ?? 0) + 15;
     log(s, a.end, `${WORLD[def.world].name}への線が開通した。`);
   }
   // 予約していた研究（費用は予約時に支払い済み）

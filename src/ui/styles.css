@@ -719,6 +719,7 @@ button { font: inherit; color: inherit; }
 .btn-block { white-space: normal; line-height: 1.35; }
 .btn.has-sub { flex-direction: column; gap: 2px; padding-top: 8px; padding-bottom: 8px; }
 .ticket-no small { opacity: 1; }
+.close-card.reloc-card { background: var(--red); box-shadow: 0 4px 0 var(--red-d), var(--sh-2); }
 .goal { display: block; width: 100%; text-align: left; border: 0; cursor: pointer; margin: -10px 0 24px; padding: 12px 14px; border-radius: 12px; background: var(--paper-3); box-shadow: inset 0 0 0 1.5px var(--green), 0 3px 0 rgba(31, 77, 63, .18); min-height: 44px; transition: transform .15s var(--ease-out); }
 .goal:active { transform: translateY(2px); }
 .goal-h { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 14px; }
@@ -805,7 +806,9 @@ button { font: inherit; color: inherit; }
 .flowbars { display: grid; gap: 8px; }
 .flowbar { display: grid; grid-template-columns: 4.5em 1fr 5.5em; align-items: center; gap: 10px; font-size: 12.5px; }
 .flowbar .pbar > i { transition: none; }
-.flowbar.low { color: var(--red); font-weight: 700; }
+.flowbar.low { color: var(--red-d); font-weight: 700; }
+.pbar.flow { overflow: visible; }
+.pbar.flow .base { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 2px; background: var(--ink-2); border-radius: 1px; }
 .flowbar.low .pbar > i { background: var(--red); }
 .flowbar .v { font-family: var(--mono); text-align: right; font-size: 12px; }
 .toggle-row { width: 100%; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }

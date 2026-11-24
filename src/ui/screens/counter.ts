@@ -16,9 +16,13 @@ export function renderCounter(app: App): HTMLElement {
   const root = h('div', { class: 'screen' });
 
   // ---- 次の一手 ----
-  const adv = A.advice(s, now, 20).filter(a => app.tabUnlocked(a.tab).ok).slice(0, 3);
+  const adv = A.advice(s, now, 20).filter(a => app.tabUnlocked(a.tab).ok && !(a.sub === '移転' && A.canRelocate(s))).slice(0, 3);
   const closable = A.canClose(s);
   root.append(section('次の一手', closable ? (adv.length ? 'いつでも閉められます' : 'いまできることは済みました') : `${adv.length}件`,
+    A.canRelocate(s) ? h('button', { class: 'close-card reloc-card', 'data-fkey': 'reloc', onclick: () => app.go('map', 'relocate') },
+      h('span', { class: 'mini-sign' }, '移転'),
+      h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, `${A.nextPlace(s.relocations)}へ移転できます`), h('div', { style: { fontSize: '12px', opacity: .85 } }, '施設と研究への出費は、移転でなくなります')),
+      icon(I.arrow)) : null,
     closable ? h('button', { class: 'close-card', 'data-fkey': 'close', onclick: () => showClosed(app) },
       h('span', { class: 'mini-sign' }, '閉館'),
       h('div', { class: 'grow' }, h('div', { style: { fontWeight: 700 } }, '窓口を閉める'), h('div', { style: { fontSize: '12px', opacity: .75 } }, '成果と、次に開くとよい時刻を確認する')),
@@ -135,9 +139,8 @@ function flowBars(app: App): HTMLElement {
     ['到着', arrive, 'ゲートLv・研究'],
     ['鑑定', appraise, '鑑定士・鑑定室'],
     ['修理', repair, '修理工・工房'],
-    ['配達', deliver, '配達員（出発させた場合）']
+    ['配達', deliver, '配達員（全員が往復し続けた場合の量）']
   ];
-  const max = Math.max(...rows.map(r => r[1]));
   // 配達がたまっているなら、流量の比較より優先して配達を赤にする
   const short = A.courierShort(s);
   const low = short ? rows[3] : rows.slice(1).reduce((a, r) => (r[1] < a[1] ? r : a));
@@ -145,6 +148,6 @@ function flowBars(app: App): HTMLElement {
   const mat = A.materialShort(s);
   return h('div', { class: 'card' },
     h('div', { class: 'flowbars' }, ...rows.map(([k, v]) => h('div', { class: ['flowbar', ((k === low[0] && (short || v < arrive)) || (k === '修理' && mat.length > 0)) && 'low'] },
-      h('span', null, k), h('div', { class: 'pbar' }, h('i', { style: { width: `${Math.max(2, v / max * 100)}%` } })), h('span', { class: 'v' }, `${num(v)}件`)))),
+      h('span', null, k), h('div', { class: 'pbar flow' }, h('i', { style: { width: `${Math.max(2, Math.min(100, v / arrive * 50))}%` } }), h('b', { class: 'base' })), h('span', { class: 'v' }, `${num(v)}件`)))),
     h('p', { class: 'note', style: { margin: '10px 0 0' } }, mat.length ? `修理の素材（${mat.map(w => WORLD[w].material).join('・')}）が足りません。その世界の品を返すと手に入ります。` : short ? '返却待ちがたまっています。配達員を雇うか、Lvを上げましょう。' : low[1] < arrive ? `いま一番詰まりやすいのは「${low[0]}」。強化するなら${low[2]}。` : tight ? `どの工程も届く量をさばけていますが、「${low[0]}」はぎりぎりです。` : '届く量より、どの工程も多くさばけています。ゲートを広げる余裕があります。'));
 }

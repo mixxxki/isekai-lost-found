@@ -73,6 +73,9 @@ export function renderStorage(app: App): HTMLElement {
   const idle = A.idleCouriers(s);
   root.append(section('返却待ち', `${ready.length}件・手の空いた配達員${idle.length}人`,
     h('div', { id: 'a-ready' }, ready.length ? h('div', null,
+      B.hasMechanic(s, 'express') && B.rlv(s, 'auto_dispatch') > 0 ? h('label', { class: 'toggle', style: { marginBottom: '6px', fontSize: '13px' } },
+        h('span', null, '定期便も、前払いできるときは速達で出す'),
+        (() => { const b = h('button', { class: ['switch', s.settings.autoExpress && 'on'], role: 'switch', 'aria-checked': String(!!s.settings.autoExpress), 'aria-label': '定期便も速達で' }); b.addEventListener('click', () => { s.settings.autoExpress = !s.settings.autoExpress; app.render(); }); return b; })()) : null,
       A.sendAllCount(s) > 1 ? h('button', { class: 'btn btn-primary btn-block has-sub', style: { marginBottom: '6px' }, onclick: () => app.act(A.sendAll) }, `${A.sendAllCount(s)}人を出発させる`, h('small', { class: 'btn-sub' }, '返却待ちの多い世界から順に')) : null,
       ...[...new Set(ready.map(i => i.world))].sort((a, b) => ready.filter(i => i.world === b).length - ready.filter(i => i.world === a).length).map(w => {
       const list = ready.filter(i => i.world === w);
@@ -84,7 +87,7 @@ export function renderStorage(app: App): HTMLElement {
         h('div', { class: 'dispatch' },
           c ? h('span', { class: 'grow' }, `${c.name}（${B.courierCap(s, c)}件まで）・往復 約${span(trainee ? B.FIRST_TRIP : B.tripTime(s, c, w))}`, trainee ? h('span', { class: 'chip', style: { marginLeft: '6px' } }, `研修便 残り${3 - s.totals.trips}回`) : null) : h('span', { class: 'grow' }, '配達員は全員出発しています'),
           h('button', { class: 'btn btn-primary btn-sm', disabled: !c, onclick: (e: Event) => { const el = e.currentTarget as Element; const r = app.act((st, now) => A.send(st, w, now)); if (r.ok) app.fly(el, '出発', '#1F4D3F'); } }, '配達に出す'),
-          express && c && !trainee ? h('button', { class: 'btn btn-red btn-sm', onclick: () => app.act((st, now) => A.send(st, w, now, true)) }, '速達', h('span', { class: 'cost' }, num(expressCost(s, list.slice(0, B.courierCap(s, c)))))) : null),
+          express && c && !trainee ? (() => { const cost = expressCost(s, list.slice(0, B.courierCap(s, c))); return h('button', { class: 'btn btn-red btn-sm', disabled: s.fee < cost, title: s.fee < cost ? `礼金 ${num(cost)} 必要` : null, onclick: () => app.act((st, now) => A.send(st, w, now, true)) }, '速達', h('span', { class: 'cost' }, s.fee < cost ? `${num(cost)} 必要` : num(cost))); })() : null),
         tagList(app, 'ready-' + w, list, it => showItem(app, it.id)));
     })) : emptyNote('返却を待っている品物はありません'))));
 

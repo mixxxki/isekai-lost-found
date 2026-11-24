@@ -69,7 +69,7 @@ export interface Report {
 export interface SessionStats {
   startedAt: number; fee: number; credit: number; appraised: number; correct: number;
   repaired: number; returned: number; letters: number; dispatched: number; acted: boolean; closedShown: boolean;
-  collected?: number; shipped?: number; shippedFee?: number;
+  collected?: number; shipped?: number; shippedFee?: number; invested?: number;
 }
 
 export interface GameState {
@@ -94,10 +94,12 @@ export interface GameState {
   journal?: number;      // （旧）読んだ業務日誌の余白の行数
   journalRead?: number[]; // 読んだ業務日誌の余白（行番号）
   journalDay?: string;    // 最後に余白を出した日付
+  relocatedAt?: number;   // 最後に移転した時刻
+  prevMult?: number;      // 移転前の永続倍率（移転の得を見せるため）
   firstTrip: boolean;
   totals: { returned: number; appraised: number; correct: number; fee: number; credit: number; trips: number };
   session: SessionStats;
   report: Report | null;   // 留守中のまとめ（開館時に表示）
-  settings: { reduceMotion: boolean; autoAssign: boolean; autoNext?: boolean };
+  settings: { reduceMotion: boolean; autoAssign: boolean; autoNext?: boolean; autoExpress?: boolean };
   log: { at: number; text: string }[];
 }
